@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+.swiftpm/
+.vscode/
+.idea/
+.cursorrules
+.cursor/
+.cursor/
+# Xcode user data and workspace state
+*.xcuserstate
+*.xcscmblueprint
+ezcli.xcodeproj/project.xcworkspace/xcuserdata/
+ezcli.xcodeproj/xcuserdata/
