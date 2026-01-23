@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-private let VERSION = "v0.7.6"
+private let VERSION = "v1.0.0"
 
 @main
 struct Ez: AsyncParsableCommand {
@@ -17,7 +17,7 @@ Manage alias storage:
     - Delete .ez_cli.json to clear local aliases.
 """,
         version: VERSION,
-        subcommands: [Add.self, Remove.self, List.self, ExecuteCommand.self]
+        subcommands: [Add.self, Remove.self, List.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
     )
 
     static func main() async throws {
@@ -69,6 +69,10 @@ Manage alias storage:
             Add.main(arguments)
         case "remove":
             Remove.main(arguments)
+        case "install-completions":
+            InstallCompletions.main(arguments)
+        case "uninstall-completions":
+            UninstallCompletions.main(arguments)
         case "help":
             let question = arguments.first?.lowercased()
             switch question {
@@ -78,6 +82,10 @@ Manage alias storage:
                 exit(withError: CleanExit.helpRequest(Remove.self))
             case "list":
                 exit(withError: CleanExit.helpRequest(List.self))
+            case "install-completions":
+                exit(withError: CleanExit.helpRequest(InstallCompletions.self))
+            case "uninstall-completions":
+                exit(withError: CleanExit.helpRequest(UninstallCompletions.self))
             default:
                 exit(withError: CleanExit.helpRequest(Ez.self))
             }

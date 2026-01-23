@@ -1,0 +1,19 @@
+#compdef ez
+
+_ez() {
+    local -a aliases
+
+    # Read local aliases
+    if [[ -f .ez_cli.json ]]; then
+        if command -v jq &>/dev/null; then
+            aliases=("${(@f)$(jq -r '.aliases | keys[]' .ez_cli.json 2>/dev/null | sort)}")
+        else
+            aliases=("${(@f)$(sed -n '/"aliases"/,/^  }/p' .ez_cli.json 2>/dev/null | grep -E '^    "[^"]+"\\ *:' | sed 's/.*"\([^"]*\)".*/\1/' | sort)}")
+        fi
+        aliases=(${aliases:#})  # Remove empty elements
+    fi
+
+    (( ${#aliases} )) && compadd -a aliases
+}
+
+_ez "$@"

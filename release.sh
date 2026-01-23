@@ -65,9 +65,14 @@ sed -i '' "s/private let VERSION = \".*\"/private let VERSION = \"$TAG\"/" "$SWI
 echo "Building release binary..."
 swift build -c release
 
-# 3. Package the binary
-echo "Packaging binary into $TARBALL..."
-tar -czf "$TARBALL" -C "$BUILD_DIR" "$BINARY_NAME"
+# 3. Package the binary and completions
+echo "Packaging binary and completions into $TARBALL..."
+STAGING_DIR=".build/staging"
+rm -rf "$STAGING_DIR"
+mkdir -p "$STAGING_DIR/completions"
+cp "$BUILD_DIR/$BINARY_NAME" "$STAGING_DIR/"
+cp completions/_ez "$STAGING_DIR/completions/"
+tar -czf "$TARBALL" -C "$STAGING_DIR" .
 
 # 4. Calculate SHA256
 SHA256=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
