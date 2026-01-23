@@ -1,0 +1,22 @@
+{
+  "aliases" : {
+    "install-brew" : {
+      "executionType" : "sequential",
+      "commands" : [
+        "rm \/usr\/local\/bin\/ez && brew link ez"
+      ]
+    },
+    "test" : {
+      "commands" : [
+        ".\/acceptance-test.sh"
+      ],
+      "executionType" : "sequential"
+    },
+    "install-local" : {
+      "executionType" : "sequential",
+      "commands" : [
+        "brew unlink ez && swift build -c release && sudo cp .build\/release\/ez \/usr\/local\/bin\/"
+      ]
+    }
+  }
+}
