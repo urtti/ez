@@ -91,7 +91,7 @@ cd "$TEST_DIR"
 echo ""
 echo "## Version and Help"
 output=$(ez --version)
-assert_contains "$output" "v0." "--version outputs version"
+assert_contains "$output" "v[0-9]\+\.[0-9]\+\.[0-9]\+" "--version outputs version"
 
 output=$(ez --help)
 assert_contains "$output" "Streamlines CLI command execution" "--help shows abstract"
