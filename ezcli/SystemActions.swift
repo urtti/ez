@@ -1,72 +1,97 @@
 import Foundation
 
-@MainActor var childProcesses: [Int32: Process] = .init()
+@MainActor var childPids: Set<pid_t> = []
 
-@MainActor func runCommands(_ command: String, output: FileHandle = .standardOutput, errorOutput: FileHandle = .standardError) {
-    let process = Process()
+@MainActor func runCommands(_ command: String) {
+    let start = Date()
+
     let shell = "/bin/zsh"
-    process.executableURL = URL(fileURLWithPath: shell)
-    process.arguments = ["-c", command]
+    var pid: pid_t = 0
 
-    // Forward the standard input, output, and error
-    process.standardInput = FileHandle.standardInput
-    process.standardOutput = output
-    process.standardError = errorOutput
+    // Set up posix_spawn to inherit file descriptors (including TTY)
+    var fileActions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&fileActions)
 
-    do {
-        let start = Date()
-        // Code to be timed
-        try process.run()
-        childProcesses[process.processIdentifier] = process
-        // TODO: Print this when verbose, noisy otherwise
-        // print("Started [PID:\(process.processIdentifier)] \(command)...")
-        process.waitUntilExit()
-        childProcesses.removeValue(forKey: process.processIdentifier)
+    // Inherit stdin/stdout/stderr (file descriptors 0, 1, 2)
+    posix_spawn_file_actions_adddup2(&fileActions, STDIN_FILENO, STDIN_FILENO)
+    posix_spawn_file_actions_adddup2(&fileActions, STDOUT_FILENO, STDOUT_FILENO)
+    posix_spawn_file_actions_adddup2(&fileActions, STDERR_FILENO, STDERR_FILENO)
+
+    // Build args array
+    let args: [UnsafeMutablePointer<CChar>?] = [
+        strdup(shell),
+        strdup("-c"),
+        strdup(command),
+        nil
+    ]
+    defer {
+        for arg in args { free(arg) }
+    }
+
+    let result = posix_spawn(&pid, shell, &fileActions, nil, args, environ)
+    posix_spawn_file_actions_destroy(&fileActions)
+
+    if result == 0 {
+        childPids.insert(pid)
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
+        childPids.remove(pid)
         printTimeTaken(fromStart: start)
-    } catch {
-        printError("Failed to execute command: \(error.localizedDescription)")
+    } else {
+        printError("Failed to spawn process: \(result)")
     }
 }
 
-func runParallelCommands(_ commands: [String], output: FileHandle = .standardOutput, errorOutput: FileHandle = .standardError) async {
+func runParallelCommands(_ commands: [String]) async {
     print("🐘 Running in parallel: \(commands.joined(separator: ", "))".format(bold: true, color: .green))
-    fflush(stdout) // Ensures the text is flushed immediately to the console
+    fflush(stdout)
     await withTaskGroup(of: Void.self) { taskGroup in
         for command in commands {
             taskGroup.addTask {
-                await runSingleParallelJob(command, output: output, errorOutput: errorOutput)
+                await runSingleParallelJob(command)
             }
         }
     }
 }
 
-private func runSingleParallelJob(_ command: String, output: FileHandle = .standardOutput, errorOutput: FileHandle = .standardError) async {
-    let process = Process()
+private func runSingleParallelJob(_ command: String) async {
+    let start = Date()
     let shell = "/bin/zsh"
-    process.executableURL = URL(fileURLWithPath: shell)
-    process.arguments = ["-c", command]
+    var pid: pid_t = 0
 
-    // Set up a pipe to capture output
-    // let outputPipe = Pipe()
-    // TODO: Consider if it would make sense to capture outputs and e.g. output when job is done
-    process.standardInput = FileHandle.standardInput
-    process.standardOutput = output
-    process.standardError = errorOutput
+    var fileActions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&fileActions)
+    posix_spawn_file_actions_adddup2(&fileActions, STDIN_FILENO, STDIN_FILENO)
+    posix_spawn_file_actions_adddup2(&fileActions, STDOUT_FILENO, STDOUT_FILENO)
+    posix_spawn_file_actions_adddup2(&fileActions, STDERR_FILENO, STDERR_FILENO)
 
-    do {
-        let start = Date()
-        try process.run()
+    let args: [UnsafeMutablePointer<CChar>?] = [
+        strdup(shell),
+        strdup("-c"),
+        strdup(command),
+        nil
+    ]
+    defer {
+        for arg in args { free(arg) }
+    }
+
+    let result = posix_spawn(&pid, shell, &fileActions, nil, args, environ)
+    posix_spawn_file_actions_destroy(&fileActions)
+
+    if result == 0 {
         _ = await MainActor.run {
-            childProcesses[process.processIdentifier] = process
+            childPids.insert(pid)
         }
-        print("Started [PID:\(process.processIdentifier)] \(command)...")
-        process.waitUntilExit()
+        print("Started [PID:\(pid)] \(command)...")
+        fflush(stdout)
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
         _ = await MainActor.run {
-            childProcesses.removeValue(forKey: process.processIdentifier)
+            childPids.remove(pid)
         }
-        printTimeTaken(fromStart: start, jobTitle: "[PID:\(process.processIdentifier)] \(command) ",)
-        fflush(stdout) // Ensures the text is flushed immediately to the console
-    } catch {
-        printError("Failed to execute command: \(error.localizedDescription)")
+        printTimeTaken(fromStart: start, jobTitle: "[PID:\(pid)] \(command) ")
+        fflush(stdout)
+    } else {
+        printError("Failed to spawn process: \(result)")
     }
 }

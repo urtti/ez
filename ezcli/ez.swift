@@ -21,46 +21,34 @@ Manage alias storage:
     )
 
     static func main() async throws {
-        // Setup signal handler for SIGINT
+        // Setup signal handlers to forward signals to child processes
         signal(SIGINT) { _ in
-            for childProcess in childProcesses {
-                print("Interrupting subprocess \(childProcess.key)...")
-                childProcess.value.interrupt()
+            for pid in childPids {
+                kill(pid, SIGINT)
             }
         }
 
         signal(SIGTERM) { _ in
-            for childProcess in childProcesses {
-                print("Terminating subprocess \(childProcess.key)...")
-                childProcess.value.terminate()
+            for pid in childPids {
+                kill(pid, SIGTERM)
             }
         }
 
         signal(SIGQUIT) { _ in
-            for childProcess in childProcesses {
-                print("Quitting subprocess \(childProcess.key)...")
-                childProcess.value.terminate()
+            for pid in childPids {
+                kill(pid, SIGQUIT)
             }
         }
 
-        signal(SIGKILL) { _ in
-            for childProcess in childProcesses {
-                print("Killing subprocess \(childProcess.key)...")
-                childProcess.value.terminate()
-            }
-        }
-
-        signal(SIGSTOP) { _ in
-            for childProcess in childProcesses {
-                print("Stopping subprocess \(childProcess.key)...")
-                childProcess.value.suspend()
+        signal(SIGTSTP) { _ in
+            for pid in childPids {
+                kill(pid, SIGTSTP)
             }
         }
 
         signal(SIGCONT) { _ in
-            for childProcess in childProcesses {
-                print("Continuing subprocess \(childProcess.key)...")
-                childProcess.value.resume()
+            for pid in childPids {
+                kill(pid, SIGCONT)
             }
         }
 
