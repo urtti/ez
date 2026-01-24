@@ -1,58 +1,109 @@
-# ezcli
+# ez
 
-A macOS CLI tool for managing and executing command aliases, written in Swift.
+A macOS CLI tool for project-specific command aliases. Define commands locally within project directories, making team workflows more efficient and discoverable.
 
-## Building
+![Demo](https://vhs.charm.sh/vhs-MNJIHYcWKivqHnrdoc14c.gif)
 
-To build the project using Swift Package Manager:
+## Features
+
+- **Project-scoped storage** - Aliases live in `.ez_cli.json` files at the directory level, keeping commands tethered to their respective projects
+- **Safety through locality** - No global aliases means no accidental damage in a different directory
+- **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands
+- **Fast** - Built in Swift with zero third-party dependencies and instant startup times
+- **Private** - Entirely offline with no telemetry or cloud connectivity
+- **Interactive support** - Full terminal passthrough for interactive applications like vim and ssh
+- **Shell integration** - zsh tab completion for command discovery
+- **Built-in analytics** - Automatic runtime tracking logs command execution duration
+
+## Installation
+
+```sh
+brew tap urtti/ez && brew install ez
+```
+
+## Usage
+
+Add an alias:
+```sh
+ez add deploy "./scripts/deploy.sh --env prod"
+```
+
+Run an alias:
+```sh
+ez deploy
+```
+
+List all aliases:
+```sh
+ez list
+```
+
+Remove an alias:
+```sh
+ez remove deploy
+```
+
+Run multiple commands sequentially:
+```sh
+ez build && ez test && ez deploy
+```
+
+Run commands in parallel:
+```sh
+ez -p lint test
+```
+
+## How It Works
+
+Aliases are stored in `.ez_cli.json` files within each directory. This keeps commands context-specific and prevents conflicts between projects. To clear all aliases in a directory, simply delete the `.ez_cli.json` file.
+
+## Requirements
+
+- macOS 15.0+
+
+## Development
+
+### Building
 
 ```sh
 swift build
 ```
 
-## Running
-
-To run the CLI tool:
+### Running from source
 
 ```sh
 swift run ez
 ```
 
-## Testing
+### Testing
 
-Due to a limitation in Swift Package Manager, the `UNIT_TEST` flag must be passed to the compiler for tests to use test-specific files and avoid interfering with your real configuration. Use the provided script to run tests:
+Use the provided script to run tests with the correct flags:
 
 ```sh
 ./run-test.sh
 ```
 
-Or pass additional arguments to filter tests:
+Or filter specific tests:
 
 ```sh
 ./run-test.sh --filter EzTests.testScopeGetURL
 ```
 
-This script runs:
+**Note:** Do not use `swift test` directly. The `UNIT_TEST` flag must be passed to prevent tests from interfering with your real configuration:
 
-```
+```sh
 swift test -Xswiftc -DUNIT_TEST
 ```
 
-**Do not use `swift test` directly** unless you also pass the `-Xswiftc -DUNIT_TEST` flag, or tests may read/write your real alias files.
+### Code Coverage
 
-## Code Coverage
-
-To run tests and generate a code coverage report, use the provided script:
+Generate a coverage report:
 
 ```sh
 ./run-test-coverage.sh
 ```
 
-This will:
-- Run tests with coverage enabled and the UNIT_TEST flag
-- Print a summary of code coverage (lines, functions, regions) for each file
-
-You can also generate a detailed HTML report with:
+For a detailed HTML report:
 
 ```sh
 llvm-cov show .build/debug/ezcliPackageTests.xctest/Contents/MacOS/ezcliPackageTests \
@@ -60,36 +111,21 @@ llvm-cov show .build/debug/ezcliPackageTests.xctest/Contents/MacOS/ezcliPackageT
   -format=html -output-dir=coverage
 ```
 
-Then open `coverage/index.html` in your browser to explore line-by-line coverage.
-
-**Note:** Code coverage is only accurate when running tests with the UNIT_TEST flag and coverage enabled.
-
-## Project Structure
+### Project Structure
 
 - `ezcli/` - Source code
 - `test/` - Unit tests
 - `run-test.sh` - Script to run tests with the correct flags
 
-## Requirements
-- macOS 15.0+
+### Build Requirements
+
 - Swift 6.0+
 - Xcode 16.4+
 
+### Xcode Setup
+
+If building for device or distribution, set your own Apple Development Team in the Xcode project settings.
+
 ## License
-MIT 
 
-## Disclaimer
-
-This software is provided under the MIT License. It is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
-
-No support or maintenance is guaranteed. Use at your own risk. 
-
-## Xcode Project Setup
-
-If you wish to build this project for device or distribution, you must set your own Apple Development Team in the Xcode project settings. This project does not include a default team ID for privacy reasons. 
-
-## Aliases
-
-Aliases are stored in a JSON file (.ez_cli.json) within each directory, allowing for context-specific command sets. Local aliases take precedence when names conflict. To clear all aliases, delete the .ez_cli.json file in the relevant directory.
-
-**Note:** Global alias support is currently disabled due to safety concerns. Only local aliases are supported. This may be revisited in a future release if a safe implementation is possible. 
+MIT
