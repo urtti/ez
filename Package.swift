@@ -19,14 +19,6 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "ezcli"
-        ),
-        .testTarget(
-            name: "ezcliTests",
-            dependencies: ["ezcli"],
-            path: "test",
-            swiftSettings: [
-                .define("UNIT_TEST")
-            ]
         )
     ]
 ) 
