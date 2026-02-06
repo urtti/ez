@@ -172,6 +172,32 @@ output=$(ez multi)
 assert_contains "$output" "first" "sequential commands - first"
 assert_contains "$output" "second" "sequential commands - second"
 
+# Parameter substitution
+echo ""
+echo "## Parameter Substitution"
+ez add pgreet 'echo hello {1}'
+output=$(ez pgreet world)
+assert_contains "$output" "hello world" "single placeholder substitution"
+
+ez add phi 'echo {1} and {2}'
+output=$(ez phi foo bar)
+assert_contains "$output" "foo and bar" "multiple placeholder substitution"
+
+ez add prep 'echo {1} {1} {1}'
+output=$(ez prep yo)
+assert_contains "$output" "yo yo yo" "repeated placeholder substitution"
+
+output=$(ez pgreet 2>&1 || true)
+assert_contains "$output" "Expected 1 argument(s)" "missing args shows error"
+
+output=$(ez list)
+assert_contains "$output" "{1}" "list shows placeholder templates"
+
+# Non-parameterized aliases still work with extra args (ignored)
+ez add noparams "echo static"
+output=$(ez noparams extraarg)
+assert_contains "$output" "static" "non-parameterized alias ignores extra args"
+
 # Summary
 echo ""
 echo "======================================="

@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-private let VERSION = "v1.0.4"
+private let VERSION = "v1.1.0"
 
 @main
 struct Ez: AsyncParsableCommand {
@@ -12,6 +12,10 @@ struct Ez: AsyncParsableCommand {
 🐘 `ez` simplifies frequent command usage by storing terminal commands with short, memorable aliases.
 
 Aliases are stored in a JSON file (.ez_cli.json) within each directory, allowing for context-specific command sets. Local aliases take precedence when names conflict.
+
+Parametrized aliases:
+    Use {1}, {2}, ... {n} as placeholders in commands. They are replaced with arguments at runtime.
+    Example: ez add greet "echo Hello {1}" → ez greet World → echo Hello World
 
 Manage alias storage:
     - Delete .ez_cli.json to clear local aliases.
@@ -100,8 +104,17 @@ Manage alias storage:
                 exit(withError: nil)
             }
 
-            print("🐘 Executing: \(alias.commandsDescription)".format(bold: true, color: .green))
-            await alias.execute()
+            let expectedArgs = alias.maxPlaceholderIndex
+            if expectedArgs > 0 && arguments.count < expectedArgs {
+                let placeholders = (1...expectedArgs).map { "<arg\($0)>" }.joined(separator: " ")
+                printError("🐘 Expected \(expectedArgs) argument(s): ez \(command) \(placeholders)")
+                exit(withError: nil)
+            }
+
+            let resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: arguments) : alias
+
+            print("🐘 Executing: \(resolvedAlias.commandsDescription)".format(bold: true, color: .green))
+            await resolvedAlias.execute()
         }
     }
 

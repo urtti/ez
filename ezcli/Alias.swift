@@ -12,6 +12,31 @@ struct Alias: Codable {
         }
     }
 
+    var maxPlaceholderIndex: Int {
+        var maxIndex = 0
+        for command in commands {
+            for i in 1...99 {
+                if command.contains("{\(i)}") {
+                    maxIndex = max(maxIndex, i)
+                } else if i > maxIndex + 1 {
+                    break
+                }
+            }
+        }
+        return maxIndex
+    }
+
+    func substituting(arguments: [String]) -> Alias {
+        let substitutedCommands = commands.map { command in
+            var result = command
+            for (index, arg) in arguments.enumerated() {
+                result = result.replacingOccurrences(of: "{\(index + 1)}", with: arg)
+            }
+            return result
+        }
+        return Alias(executionType: executionType, commands: substitutedCommands, description: description)
+    }
+
     func execute() async {
         switch executionType {
         case .sequential:
