@@ -1,9 +1,9 @@
 {
   "aliases" : {
-    "install-brew" : {
+    "stats" : {
       "executionType" : "sequential",
       "commands" : [
-        "rm \/usr\/local\/bin\/ez && brew link ez"
+        "curl -s https:\/\/api.github.com\/repos\/urtti\/homebrew-ez\/releases | jq '.[] | {tag: .tag_name, assets: [.assets[] | {name: .name, count: .download_count}]}'"
       ]
     },
     "test" : {
@@ -13,10 +13,16 @@
       "executionType" : "sequential"
     },
     "install-local" : {
-      "executionType" : "sequential",
       "commands" : [
         "brew unlink ez && swift build -c release && sudo cp .build\/release\/ez \/usr\/local\/bin\/"
-      ]
+      ],
+      "executionType" : "sequential"
+    },
+    "install-brew" : {
+      "commands" : [
+        "rm \/usr\/local\/bin\/ez && brew link ez"
+      ],
+      "executionType" : "sequential"
     }
   }
 }
