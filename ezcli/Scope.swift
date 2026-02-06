@@ -41,8 +41,4 @@ enum Scope: String {
         }
         #endif
     }
-
-    func title() -> String {
-        rawValue.capitalized
-    }
 }

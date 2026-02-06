@@ -43,19 +43,4 @@ extension String {
     func formatBold() -> String {
         "\u{001B}[1m\(self)\u{001B}[0m" // Bold with default color
     }
-
-    func containsExactMatch(of searchTerm: String) -> Bool {
-        // Define the regular expression pattern with word boundaries
-        let pattern = "\\b\(searchTerm)\\b"
-
-        // Create a regular expression instance
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-
-        // Search for matches in the command string
-        let range = NSRange(self.startIndex..., in: self)
-        let matches = regex?.matches(in: self, options: [], range: range)
-
-        // Check if there is at least one match
-        return matches?.count ?? 0 > 0
-    }
 }
