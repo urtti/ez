@@ -1,10 +1,10 @@
 {
   "aliases" : {
-    "install-local" : {
-      "executionType" : "sequential",
+    "stats" : {
       "commands" : [
-        "brew unlink ez && swift build -c release && sudo cp .build\/release\/ez \/usr\/local\/bin\/"
-      ]
+        "curl -s https:\/\/api.github.com\/repos\/urtti\/homebrew-ez\/releases | jq '.[] | {tag: .tag_name, assets: [.assets[] | {name: .name, count: .download_count}]}'"
+      ],
+      "executionType" : "sequential"
     },
     "lol" : {
       "executionType" : "sequential",
@@ -13,23 +13,30 @@
         "test"
       ]
     },
+    "install-local" : {
+      "executionType" : "sequential",
+      "commands" : [
+        "brew unlink ez && swift build -c release && sudo cp .build\/release\/ez \/usr\/local\/bin\/"
+      ]
+    },
     "test" : {
       "executionType" : "sequential",
       "commands" : [
         ".\/acceptance-test.sh"
       ]
     },
-    "stats" : {
+    "bump-version" : {
+      "description" : "Bump ez version",
       "commands" : [
-        "curl -s https:\/\/api.github.com\/repos\/urtti\/homebrew-ez\/releases | jq '.[] | {tag: .tag_name, assets: [.assets[] | {name: .name, count: .download_count}]}'"
+        "sed -i \"\" \"s\/private let VERSION = \\\"v[^\\\"]*\\\"\/private let VERSION = \\\"v{1}\\\"\/\" ezcli\/ez.swift && grep \"private let VERSION\" ezcli\/ez.swift"
       ],
       "executionType" : "sequential"
     },
     "install-brew" : {
-      "executionType" : "sequential",
       "commands" : [
         "rm \/usr\/local\/bin\/ez && brew link ez"
-      ]
+      ],
+      "executionType" : "sequential"
     }
   }
 }
