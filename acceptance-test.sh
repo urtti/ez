@@ -209,6 +209,38 @@ ez add spacey "echo test"
 output=$(ez spacey "hello world")
 assert_contains "$output" "hello world" "extra arg with spaces is preserved"
 
+# Secrets placeholder in aliases
+echo ""
+echo "## Secret Placeholders"
+ez add secretcmd 'echo token={EZ_API_KEY} and extra={EZ_OTHER}'
+output=$(ez list)
+assert_contains "$output" "secretcmd" "alias with secret placeholders is listed"
+output=$(ez list -v)
+assert_contains "$output" "{EZ_API_KEY}" "verbose list shows secret placeholder"
+
+# add-secret key validation
+echo ""
+echo "## Add-Secret Validation"
+output=$(ez add-secret --key BADKEY --value test 2>&1 || true)
+assert_contains "$output" "Must start with EZ_" "add-secret rejects key without EZ_ prefix"
+
+output=$(ez add-secret --key EZ_lower --value test 2>&1 || true)
+assert_contains "$output" "Must start with EZ_" "add-secret rejects lowercase key"
+
+# Protected keywords for secrets
+echo ""
+echo "## Secret Protected Keywords"
+output=$(ez add add-secret "echo x" 2>&1 || true)
+assert_contains "$output" "protected keyword" "cannot add alias named 'add-secret'"
+
+output=$(ez add remove-secret "echo x" 2>&1 || true)
+assert_contains "$output" "protected keyword" "cannot add alias named 'remove-secret'"
+
+# Help shows new commands
+output=$(ez --help)
+assert_contains "$output" "add-secret" "--help shows add-secret command"
+assert_contains "$output" "remove-secret" "--help shows remove-secret command"
+
 # Summary
 echo ""
 echo "======================================="

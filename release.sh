@@ -65,7 +65,11 @@ sed -i '' "s/private let VERSION = \".*\"/private let VERSION = \"$TAG\"/" "$SWI
 echo "Building release binary..."
 swift build -c release
 
-# 3. Package the binary and completions
+# 3. Code-sign binary (required for Keychain access)
+echo "Code-signing binary..."
+codesign --force --sign "Apple Development: Tommi Urtti (38Q3XKEQWF)" "$BUILD_DIR/$BINARY_NAME"
+
+# 4. Package the binary and completions
 echo "Packaging binary and completions into $TARBALL..."
 STAGING_DIR=".build/staging"
 rm -rf "$STAGING_DIR"
@@ -74,28 +78,28 @@ cp "$BUILD_DIR/$BINARY_NAME" "$STAGING_DIR/"
 cp completions/_ez "$STAGING_DIR/completions/"
 tar -czf "$TARBALL" -C "$STAGING_DIR" .
 
-# 4. Calculate SHA256
+# 5. Calculate SHA256
 SHA256=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
 echo "SHA256: $SHA256"
 
-# 5. Update Homebrew formula
+# 6. Update Homebrew formula
 echo "Updating $FORMULA_PATH..."
 sed -i '' "s|url \".*\"|url \"https://github.com/urtti/homebrew-ez/releases/download/$TAG/$TARBALL\"|" "$FORMULA_PATH"
 sed -i '' "s|sha256 \".*\"|sha256 \"$SHA256\"|" "$FORMULA_PATH"
 sed -i '' "s|version \".*\"|version \"$TAG\"|" "$FORMULA_PATH"
 
-# 6. Commit and tag (optional, comment out if you want to do this manually)
+# 7. Commit and tag (optional, comment out if you want to do this manually)
 echo "Committing and tagging release..."
 git add "$SWIFT_FILE"
 git commit -m "Release $TAG"
 git tag "$TAG"
 
-# 7. Push changes and tag
+# 8. Push changes and tag
 echo "Pushing changes and tag to origin..."
 git push
 git push origin "$TAG"
 
-# 8. Automate updating Homebrew tap repo
+# 9. Automate updating Homebrew tap repo
 echo "Creating new release directory $TAP_DIR/$NEW_RELEASE_DIR..."
 mkdir -p "$TAP_DIR/$NEW_RELEASE_DIR"
 
@@ -127,7 +131,7 @@ git commit -m "Update ez formula to $TAG, add release tarball"
 git push
 cd -
 
-# 10. Print instructions for testing
+# 11. Print instructions for testing
 cat <<EOF
 
 Next steps:

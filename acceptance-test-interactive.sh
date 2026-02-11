@@ -99,6 +99,42 @@ prompt
 ez toptest
 
 echo ""
+echo "## Test 7: Add secret to keychain"
+echo "Expected: Touch ID / password prompt, then confirmation"
+echo "Running: ez add-secret --key EZ_TEST --value hello_secret"
+prompt
+ez add-secret --key EZ_TEST --value hello_secret
+
+echo ""
+echo "## Test 8: Add duplicate secret (should fail)"
+echo "Expected: Error about existing key"
+echo "Running: ez add-secret --key EZ_TEST --value other"
+prompt
+ez add-secret --key EZ_TEST --value other || true
+
+echo ""
+echo "## Test 9: Force overwrite secret"
+echo "Expected: Touch ID / password prompt, then confirmation"
+echo "Running: ez add-secret --key EZ_TEST --value updated_secret --force"
+prompt
+ez add-secret --key EZ_TEST --value updated_secret --force
+
+echo ""
+echo "## Test 10: Execute alias with secret placeholder"
+ez add secrettest 'echo The secret is {EZ_TEST}'
+echo "Expected: 'Executing: echo The secret is {EZ_TEST}' then outputs 'The secret is updated_secret'"
+echo "Running: ez secrettest"
+prompt
+ez secrettest
+
+echo ""
+echo "## Test 11: Remove secret from keychain"
+echo "Expected: Confirmation that secret was removed"
+echo "Running: ez remove-secret EZ_TEST"
+prompt
+ez remove-secret EZ_TEST
+
+echo ""
 echo "============================="
 echo "Interactive tests complete!"
 echo "Clean up: removing $TEST_DIR"

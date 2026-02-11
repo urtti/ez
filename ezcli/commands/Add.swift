@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-private let PROTECTED_KEYWORDS = ["add", "remove", "list"]
+private let PROTECTED_KEYWORDS = ["add", "remove", "list", "add-secret", "remove-secret"]
 
 struct Add: ParsableCommand {
     static let configuration = CommandConfiguration(

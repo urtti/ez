@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-private let VERSION = "v1.1.0"
+private let VERSION = "v1.2.0"
 
 @main
 struct Ez: AsyncParsableCommand {
@@ -21,7 +21,7 @@ Manage alias storage:
     - Delete .ez_cli.json to clear local aliases.
 """,
         version: VERSION,
-        subcommands: [Add.self, Remove.self, List.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
+        subcommands: [Add.self, Remove.self, List.self, AddSecret.self, RemoveSecret.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
     )
 
     static func main() async throws {
@@ -73,6 +73,10 @@ Manage alias storage:
             Add.main(arguments)
         case "remove":
             Remove.main(arguments)
+        case "add-secret":
+            AddSecret.main(arguments)
+        case "remove-secret":
+            RemoveSecret.main(arguments)
         case "install-completions":
             InstallCompletions.main(arguments)
         case "uninstall-completions":
@@ -86,6 +90,10 @@ Manage alias storage:
                 exit(withError: CleanExit.helpRequest(Remove.self))
             case "list":
                 exit(withError: CleanExit.helpRequest(List.self))
+            case "add-secret":
+                exit(withError: CleanExit.helpRequest(AddSecret.self))
+            case "remove-secret":
+                exit(withError: CleanExit.helpRequest(RemoveSecret.self))
             case "install-completions":
                 exit(withError: CleanExit.helpRequest(InstallCompletions.self))
             case "uninstall-completions":
@@ -116,6 +124,22 @@ Manage alias storage:
             resolvedAlias = resolvedAlias.appending(extraArguments: extraArgs)
 
             print("🐘 Executing: \(resolvedAlias.commandsDescription)".format(bold: true, color: .green))
+
+            // Resolve secrets from keychain (after printing, so secrets never appear in output)
+            let keys = resolvedAlias.secretKeys
+            if !keys.isEmpty {
+                var secrets: [String: String] = [:]
+                for key in keys {
+                    do {
+                        secrets[key] = try KeychainManager.readSecret(key: key)
+                    } catch let error as KeychainError {
+                        printError("Failed to read secret '\(key)': \(error.message)")
+                        exit(withError: nil)
+                    }
+                }
+                resolvedAlias = resolvedAlias.substitutingSecrets(secrets)
+            }
+
             await resolvedAlias.execute()
         }
     }
