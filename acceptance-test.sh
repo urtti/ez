@@ -193,10 +193,21 @@ assert_contains "$output" "Expected 1 argument(s)" "missing args shows error"
 output=$(ez list)
 assert_contains "$output" "{1}" "list shows placeholder templates"
 
-# Non-parameterized aliases still work with extra args (ignored)
+## Extra Arguments Appended
 ez add noparams "echo static"
 output=$(ez noparams extraarg)
-assert_contains "$output" "static" "non-parameterized alias ignores extra args"
+assert_contains "$output" "static extraarg" "extra args appended to non-parameterized alias"
+
+output=$(ez noparams)
+assert_contains "$output" "static" "no extra args still works"
+
+ez add pappend "echo hello {1}"
+output=$(ez pappend world extra1 extra2)
+assert_contains "$output" "hello world extra1 extra2" "extra args appended after placeholder substitution"
+
+ez add spacey "echo test"
+output=$(ez spacey "hello world")
+assert_contains "$output" "hello world" "extra arg with spaces is preserved"
 
 # Summary
 echo ""

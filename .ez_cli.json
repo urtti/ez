@@ -1,28 +1,35 @@
 {
   "aliases" : {
-    "stats" : {
+    "install-local" : {
       "executionType" : "sequential",
       "commands" : [
-        "curl -s https:\/\/api.github.com\/repos\/urtti\/homebrew-ez\/releases | jq '.[] | {tag: .tag_name, assets: [.assets[] | {name: .name, count: .download_count}]}'"
+        "brew unlink ez && swift build -c release && sudo cp .build\/release\/ez \/usr\/local\/bin\/"
+      ]
+    },
+    "lol" : {
+      "executionType" : "sequential",
+      "commands" : [
+        "echo",
+        "test"
       ]
     },
     "test" : {
+      "executionType" : "sequential",
       "commands" : [
         ".\/acceptance-test.sh"
-      ],
-      "executionType" : "sequential"
+      ]
     },
-    "install-local" : {
+    "stats" : {
       "commands" : [
-        "brew unlink ez && swift build -c release && sudo cp .build\/release\/ez \/usr\/local\/bin\/"
+        "curl -s https:\/\/api.github.com\/repos\/urtti\/homebrew-ez\/releases | jq '.[] | {tag: .tag_name, assets: [.assets[] | {name: .name, count: .download_count}]}'"
       ],
       "executionType" : "sequential"
     },
     "install-brew" : {
+      "executionType" : "sequential",
       "commands" : [
         "rm \/usr\/local\/bin\/ez && brew link ez"
-      ],
-      "executionType" : "sequential"
+      ]
     }
   }
 }

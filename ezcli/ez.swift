@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-private let VERSION = "v1.1.0"
+private let VERSION = "v1.1.1"
 
 @main
 struct Ez: AsyncParsableCommand {
@@ -111,7 +111,9 @@ Manage alias storage:
                 exit(withError: nil)
             }
 
-            let resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: arguments) : alias
+            var resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: arguments) : alias
+            let extraArgs = Array(arguments.dropFirst(expectedArgs))
+            resolvedAlias = resolvedAlias.appending(extraArguments: extraArgs)
 
             print("🐘 Executing: \(resolvedAlias.commandsDescription)".format(bold: true, color: .green))
             await resolvedAlias.execute()

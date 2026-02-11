@@ -37,6 +37,16 @@ struct Alias: Codable {
         return Alias(executionType: executionType, commands: substitutedCommands, description: description)
     }
 
+    func appending(extraArguments: [String]) -> Alias {
+        guard !extraArguments.isEmpty else { return self }
+        let escaped = extraArguments.map { shellEscape($0) }.joined(separator: " ")
+        var newCommands = commands
+        if let last = newCommands.last {
+            newCommands[newCommands.count - 1] = last + " " + escaped
+        }
+        return Alias(executionType: executionType, commands: newCommands, description: description)
+    }
+
     func execute() async {
         switch executionType {
         case .sequential:
@@ -45,6 +55,13 @@ struct Alias: Codable {
             await runParallelCommands(commands)
         }
     }
+}
+
+private func shellEscape(_ arg: String) -> String {
+    if arg.allSatisfy({ $0.isLetter || $0.isNumber || "_-./,:@+".contains($0) }) {
+        return arg
+    }
+    return "'" + arg.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
 enum ExecutionType: String, Codable {
