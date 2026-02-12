@@ -10,6 +10,7 @@ A macOS CLI tool for project-specific command aliases. Define commands locally w
 - **Safety through locality** - No global aliases means no accidental damage in a different directory
 - **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands
 - **Fast** - Built in Swift with zero third-party dependencies and instant startup times
+- **Secrets management** - Store API keys and tokens in Apple Keychain, reference them in aliases without exposing values in terminal output
 - **Private** - Entirely offline with no telemetry or cloud connectivity
 - **Interactive support** - Full terminal passthrough for interactive applications like vim and ssh
 - **Shell integration** - zsh tab completion for command discovery
@@ -41,6 +42,33 @@ ez list
 Remove an alias:
 ```sh
 ez remove deploy
+```
+
+Parameterized aliases with `{1}`, `{2}`, ... placeholders:
+```sh
+ez add tag 'git tag -a {1} -m "Release {1}"'
+ez tag v2.0.0  # → git tag -a v2.0.0 -m "Release v2.0.0"
+```
+
+Extra arguments are automatically appended to the end of the command:
+```sh
+ez add gs "git stash"
+ez gs pop              # → git stash pop
+
+ez add greet 'echo hello {1}'
+ez greet world a b     # → echo hello world a b
+```
+
+Store secrets in Apple Keychain and reference them in aliases:
+```sh
+ez add-secret --key EZ_API_KEY --value sk-abc123
+ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/deploy'
+ez deploy  # secret is injected at runtime, never shown in terminal output
+```
+
+Remove a secret:
+```sh
+ez remove-secret EZ_API_KEY
 ```
 
 Run multiple commands sequentially:

@@ -32,7 +32,7 @@ output=$(ez myalias arg1)
 assert_contains "$output" "something arg1" "description of what is being tested"
 ```
 
-**Test categories covered:** version/help, add/remove/list, alias execution, parallel mode, shell expansion, sequential commands, parameter substitution, error cases.
+**Test categories covered:** version/help, add/remove/list, alias execution, parallel mode, shell expansion, sequential commands, parameter substitution, extra argument overflow, secret placeholders, add-secret validation, error cases.
 
 There is also `acceptance-test-interactive.sh` for manual verification of TTY features (vim, less, signal handling) that can't be automated.
 
@@ -41,14 +41,17 @@ There is also `acceptance-test-interactive.sh` for manual verification of TTY fe
 ```
 ezcli/
   ez.swift              # Entry point, signal handling, command routing
-  Alias.swift           # Alias model: commands, execution type, parameter substitution
+  Alias.swift           # Alias model: commands, execution type, parameter substitution, secrets
   AliasCollection.swift # Alias storage: JSON persistence, add/remove/lookup
+  Keychain.swift        # KeychainManager: Apple Keychain read/write/delete via Security framework
   Scope.swift           # Local vs global scope, file paths, test isolation
   SystemActions.swift   # Process execution via posix_spawn, parallel via TaskGroup
   TerminalOutput.swift  # ANSI formatting, timing, error output
   commands/
     Add.swift           # `ez add` — creates aliases (-p for parallel, -d for description)
+    AddSecret.swift     # `ez add-secret` — stores secrets in Keychain
     Remove.swift        # `ez remove` — deletes aliases
+    RemoveSecret.swift  # `ez remove-secret` — removes secrets from Keychain
     List.swift          # `ez list` — shows aliases (-v for verbose)
     Execute.swift       # Stub; actual execution is in ez.swift
     InstallCompletions.swift    # Adds zsh completions to ~/.zshrc
@@ -92,7 +95,21 @@ ez tag v2.0.0  # → git tag -a v2.0.0 -m "Release v2.0.0"
 
 - Implemented in `Alias.substituting(arguments:)` and `Alias.maxPlaceholderIndex`
 - Validated in `ez.swift` before execution — missing args produce an error message
-- Non-parameterized aliases silently ignore extra arguments (backward compatible)
+
+**Extra argument overflow:** Any arguments beyond the highest placeholder index are appended to the end of the last command. This works for both parameterized and non-parameterized aliases:
+
+```bash
+# Non-parameterized — all args appended
+ez add gs "git stash"
+ez gs pop             # → git stash pop
+
+# Parameterized — extra args appended after substitution
+ez add greet 'echo hello {1}'
+ez greet world foo bar  # → echo hello world foo bar
+```
+
+- Implemented in `Alias.appending(extraArguments:)` — shell-escapes each extra arg (preserving spaces via single-quoting) and appends to the last command string
+- `ez.swift` splits args: first N go to placeholder substitution, the rest go to `appending(extraArguments:)`
 
 ## Scope System
 
@@ -100,9 +117,32 @@ ez tag v2.0.0  # → git tag -a v2.0.0 -m "Release v2.0.0"
 - **Global**: `~/.ez_cli_global.json` (infrastructure exists in `Scope.swift` but not integrated into commands yet)
 - **Test isolation**: When `EZCLI_UNIT_TEST=1`, files redirect to `/tmp/ez_cli_tests/`
 
+## Secrets
+
+Aliases can reference secrets stored in Apple Keychain using `{EZ_*}` placeholders:
+
+```bash
+# Store a secret
+ez add-secret --key EZ_API_KEY --value sk-abc123
+
+# Use it in an alias
+ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/deploy'
+```
+
+**How it works:**
+- `ez add-secret --key EZ_KEY --value val` stores a secret in macOS Keychain (service: `com.urtti.ez`). Use `--force` to overwrite.
+- `ez remove-secret EZ_KEY` deletes a secret from Keychain.
+- At execution time, `Alias.secretKeys` scans commands for `{EZ_*}` patterns, then `ez.swift` reads each key from Keychain and substitutes values via `Alias.substitutingSecrets(_:)`.
+- Secret substitution happens **after** the "Executing:" line is printed, so secret values never appear in terminal output.
+- Key names must match `^EZ_[A-Z0-9_]+$` — validated both in `AddSecret` and in `Alias.secretKeys`.
+- Keychain storage uses `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` for security.
+- Errors (missing secret, auth failure) are reported and execution is aborted.
+
+**Implementation:** `Keychain.swift` (`KeychainManager` enum) wraps the Security framework. `AddSecret.swift` and `RemoveSecret.swift` are the subcommands.
+
 ## Protected Keywords
 
-Alias names `add`, `remove`, and `list` are reserved and cannot be used.
+Alias names `add`, `remove`, `list`, `add-secret`, and `remove-secret` are reserved and cannot be used.
 
 ## Release Process
 
