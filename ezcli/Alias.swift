@@ -30,7 +30,7 @@ struct Alias: Codable {
         let substitutedCommands = commands.map { command in
             var result = command
             for (index, arg) in arguments.enumerated() {
-                result = result.replacingOccurrences(of: "{\(index + 1)}", with: arg)
+                result = result.replacingOccurrences(of: "{\(index + 1)}", with: shellEscape(arg))
             }
             return result
         }

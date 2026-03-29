@@ -183,6 +183,14 @@ ez add phi 'echo {1} and {2}'
 output=$(ez phi foo bar)
 assert_contains "$output" "foo and bar" "multiple placeholder substitution"
 
+ez add special 'echo {1} {2}'
+output=$(ez special "(25,9)" .)
+assert_contains "$output" "(25,9) ." "placeholder substitution shell-escapes special characters"
+
+ez add spaced 'echo {1}::{2}'
+output=$(ez spaced "hello world" "two words")
+assert_contains "$output" "hello world::two words" "multiple placeholders preserve spaced arguments"
+
 ez add prep 'echo {1} {1} {1}'
 output=$(ez prep yo)
 assert_contains "$output" "yo yo yo" "repeated placeholder substitution"
