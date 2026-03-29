@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-private let VERSION = "1.2.1"
+private let VERSION = "1.2.2"
 
 @main
 struct Ez: AsyncParsableCommand {
