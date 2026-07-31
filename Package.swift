@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "ez", targets: ["ezcli"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.6.1")
+        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2")
     ],
     targets: [
         .executableTarget(
@@ -18,7 +18,10 @@ let package = Package(
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
-            path: "ezcli"
+            path: "ezcli",
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
+            ]
         )
     ]
 ) 

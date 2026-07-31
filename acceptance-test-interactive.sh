@@ -8,8 +8,14 @@ TEST_DIR=$(mktemp -d)
 
 cleanup() {
     rm -rf "$TEST_DIR"
+    # The keychain is not isolated by EZCLI_HOME, and this script invites Ctrl+C,
+    # so the canary item is always cleaned up rather than only in the last test
+    security delete-generic-password -s com.urtti.ez -a EZ_INTERACTIVE_TEST_CANARY > /dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+# Keep run history out of the real ~/.ez
+export EZCLI_HOME="$TEST_DIR/ez_home"
 
 prompt() {
     echo ""
@@ -101,38 +107,49 @@ ez toptest
 echo ""
 echo "## Test 7: Add secret to keychain"
 echo "Expected: Touch ID / password prompt, then confirmation"
-echo "Running: ez add-secret --key EZ_TEST --value hello_secret"
+echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value hello_secret"
 prompt
-ez add-secret --key EZ_TEST --value hello_secret
+ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value hello_secret
 
 echo ""
 echo "## Test 8: Add duplicate secret (should fail)"
 echo "Expected: Error about existing key"
-echo "Running: ez add-secret --key EZ_TEST --value other"
+echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value other"
 prompt
-ez add-secret --key EZ_TEST --value other || true
+ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value other || true
 
 echo ""
 echo "## Test 9: Force overwrite secret"
 echo "Expected: Touch ID / password prompt, then confirmation"
-echo "Running: ez add-secret --key EZ_TEST --value updated_secret --force"
+echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value updated_secret --force"
 prompt
-ez add-secret --key EZ_TEST --value updated_secret --force
+ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value updated_secret --force
 
 echo ""
 echo "## Test 10: Execute alias with secret placeholder"
-ez add secrettest 'echo The secret is {EZ_TEST}'
-echo "Expected: 'Executing: echo The secret is {EZ_TEST}' then outputs 'The secret is updated_secret'"
+ez add secrettest 'echo The secret is {EZ_INTERACTIVE_TEST_CANARY}'
+echo "Expected: 'Executing: echo The secret is {EZ_INTERACTIVE_TEST_CANARY}' then outputs 'The secret is updated_secret'"
 echo "Running: ez secrettest"
 prompt
 ez secrettest
 
 echo ""
-echo "## Test 11: Remove secret from keychain"
-echo "Expected: Confirmation that secret was removed"
-echo "Running: ez remove-secret EZ_TEST"
+echo "## Test 11: Run history never stores resolved secrets"
+dump=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs where alias_name = 'secrettest'")
+echo "Recorded template: $dump"
+if echo "$dump" | grep -q '{EZ_INTERACTIVE_TEST_CANARY}' && ! echo "$dump" | grep -q 'updated_secret'; then
+    echo "✓ database holds {EZ_INTERACTIVE_TEST_CANARY} and not the secret value"
+else
+    echo "✗ database does not hold the placeholder form"
+fi
 prompt
-ez remove-secret EZ_TEST
+
+echo ""
+echo "## Test 12: Remove secret from keychain"
+echo "Expected: Confirmation that secret was removed"
+echo "Running: ez remove-secret EZ_INTERACTIVE_TEST_CANARY"
+prompt
+ez remove-secret EZ_INTERACTIVE_TEST_CANARY
 
 echo ""
 echo "============================="

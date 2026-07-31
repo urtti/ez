@@ -2,8 +2,11 @@ import Foundation
 
 @MainActor var childPids: Set<pid_t> = []
 
-@MainActor func runCommands(_ command: String) {
+// Returns the exit code the alias produced. Spawn failure is 126, an unwaitable child is 1.
+@MainActor func runCommands(_ command: String, aliasName: String, commandTemplate: String) async -> Int32 {
     let start = Date()
+    let clock = ContinuousClock()
+    let begin = clock.now
 
     let shell = "/bin/zsh"
     var pid: pid_t = 0
@@ -34,27 +37,97 @@ import Foundation
     if result == 0 {
         childPids.insert(pid)
         var status: Int32 = 0
-        waitpid(pid, &status, 0)
+        let waited = waitpid(pid, &status, 0)
         childPids.remove(pid)
-        printTimeTaken(fromStart: start)
+        let elapsedMs = milliseconds(from: clock.now - begin)
+        // A failed wait leaves status unwritten, so there is no exit code worth recording
+        guard waited == pid else {
+            printTimeTaken(fromStart: start)
+            printError("Could not wait for process \(pid): \(String(cString: strerror(errno)))")
+            return 1
+        }
+        let code = exitCode(fromStatus: status)
+        // Read before recording this run, so it never pollutes its own baseline
+        let note = code == 0 ? await outlierNote(aliasName: aliasName, durationMs: elapsedMs) : nil
+        printTimeTaken(fromStart: start, suffix: note ?? "")
+        await recordRun(
+            aliasName: aliasName,
+            commandTemplate: commandTemplate,
+            executionType: .sequential,
+            exitCode: code,
+            durationMs: elapsedMs,
+            startedAt: start
+        )
+        return code
     } else {
         printError("Failed to spawn process: \(result)")
+        return 126
     }
 }
 
-func runParallelCommands(_ commands: [String]) async {
-    print("🐘 Running in parallel: \(commands.joined(separator: ", "))".format(bold: true, color: .green))
+// displayCommands hold the pre-secret text, so resolved secrets stay out of the terminal.
+// Returns the first non-zero exit code in command order, matching what gets recorded.
+func runParallelCommands(_ commands: [String], displayCommands: [String], aliasName: String, commandTemplate: String) async -> Int32 {
+    print("🐘 Running in parallel: \(displayCommands.joined(separator: ", "))".format(bold: true, color: .green))
     fflush(stdout)
-    await withTaskGroup(of: Void.self) { taskGroup in
-        for command in commands {
+    let start = Date()
+    let clock = ContinuousClock()
+    let begin = clock.now
+
+    // One row per invocation: total wall time, first non-zero exit code in command order
+    var codes = [Int32?](repeating: nil, count: commands.count)
+    await withTaskGroup(of: (Int, Int32?).self) { taskGroup in
+        for (index, command) in commands.enumerated() {
+            let displayCommand = index < displayCommands.count ? displayCommands[index] : command
             taskGroup.addTask {
-                await runSingleParallelJob(command)
+                (index, await runSingleParallelJob(command, displayCommand: displayCommand))
             }
         }
+        for await (index, code) in taskGroup {
+            codes[index] = code
+        }
     }
+
+    // A job with no known exit code makes the invocation uncharacterizable, so it is not
+    // recorded — but the failure still has to surface, so ez exits non-zero
+    guard !codes.contains(where: { $0 == nil }) else { return 1 }
+    let aggregatedExitCode = codes.compactMap { $0 }.first(where: { $0 != 0 }) ?? 0
+    let elapsedMs = milliseconds(from: clock.now - begin)
+
+    // Sub-jobs print their own timings; the invocation total is only worth a line of its
+    // own when it has something to say about the whole run
+    if aggregatedExitCode == 0, let note = await outlierNote(aliasName: aliasName, durationMs: elapsedMs) {
+        print("🐘⏱️ total \(formatDuration(milliseconds: elapsedMs))".format(bold: true, color: .green) + note)
+        fflush(stdout)
+    }
+
+    await recordRun(
+        aliasName: aliasName,
+        commandTemplate: commandTemplate,
+        executionType: .parallel,
+        exitCode: aggregatedExitCode,
+        durationMs: elapsedMs,
+        startedAt: start
+    )
+    return aggregatedExitCode
 }
 
-private func runSingleParallelJob(_ command: String) async {
+// nil unless the run is slow enough to be worth commenting on and far enough from its
+// baseline to be worth saying. Returns pre-coloured text ready to append to a timing line.
+private func outlierNote(aliasName: String, durationMs: Int) async -> String? {
+    // No duration gate here: whether this is worth saying depends on the baseline too,
+    // which needs the query. It is one indexed read on a connection already open to record.
+    let priors = await RunStore.shared.priorSuccessfulDurations(
+        cwd: FileManager.default.currentDirectoryPath,
+        alias: aliasName,
+        limit: OUTLIER_BASELINE_WINDOW
+    )
+    guard let outlier = RunOutlier(durationMs: durationMs, priorDurations: priors) else { return nil }
+    return "  " + outlier.note.format(bold: true, color: outlier.color)
+}
+
+// nil when the exit code could not be determined
+private func runSingleParallelJob(_ command: String, displayCommand: String) async -> Int32? {
     let start = Date()
     let shell = "/bin/zsh"
     var pid: pid_t = 0
@@ -82,16 +155,50 @@ private func runSingleParallelJob(_ command: String) async {
         _ = await MainActor.run {
             childPids.insert(pid)
         }
-        print("Started [PID:\(pid)] \(command)...")
+        print("Started [PID:\(pid)] \(displayCommand)...")
         fflush(stdout)
         var status: Int32 = 0
-        waitpid(pid, &status, 0)
+        let waited = waitpid(pid, &status, 0)
         _ = await MainActor.run {
             childPids.remove(pid)
         }
-        printTimeTaken(fromStart: start, jobTitle: "[PID:\(pid)] \(command) ")
+        printTimeTaken(fromStart: start, jobTitle: "[PID:\(pid)] \(displayCommand) ")
         fflush(stdout)
+        guard waited == pid else {
+            printError("Could not wait for process \(pid): \(String(cString: strerror(errno)))")
+            return nil
+        }
+        return exitCode(fromStatus: status)
     } else {
         printError("Failed to spawn process: \(result)")
+        return nil
     }
+}
+
+// waitpid status: exited -> exit status, killed by a signal -> 128 + signal
+private func exitCode(fromStatus status: Int32) -> Int32 {
+    let terminationSignal = status & 0x7f
+    if terminationSignal == 0 {
+        return (status >> 8) & 0xff
+    }
+    return 128 + terminationSignal
+}
+
+// Rounded, so a sub-millisecond run is not stored as a flat 0 ms baseline
+private func milliseconds(from duration: Duration) -> Int {
+    let components = duration.components
+    let subSecondMs = (components.attoseconds + 500_000_000_000_000) / 1_000_000_000_000_000
+    return Int(components.seconds * 1000 + subSecondMs)
+}
+
+private func recordRun(aliasName: String, commandTemplate: String, executionType: ExecutionType, exitCode: Int32, durationMs: Int, startedAt: Date) async {
+    await RunStore.shared.record(RunRecord(
+        cwd: FileManager.default.currentDirectoryPath,
+        aliasName: aliasName,
+        commandTemplate: commandTemplate,
+        executionType: executionType,
+        exitCode: exitCode,
+        durationMs: durationMs,
+        startedAt: startedAt
+    ))
 }

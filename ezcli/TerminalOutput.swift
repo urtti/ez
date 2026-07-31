@@ -1,22 +1,34 @@
 import Foundation
 
-func printTimeTaken(fromStart startTime: Date, jobTitle: String = "", prefix: String = "", terminator: String = "\n") {
+// suffix is appended already coloured, so the note keeps its own colour rather than the timing green
+func printTimeTaken(fromStart startTime: Date, jobTitle: String = "", prefix: String = "", terminator: String = "\n", suffix: String = "") {
     let timeInterval = Date().timeIntervalSince(startTime)
     if timeInterval < 1 {
         // Less than 1 second, display in milliseconds
         let milliseconds = timeInterval * 1000
-        print("\(prefix)🐘⏱️ \(jobTitle)\(String(format: "%.0f ms", milliseconds))".format(bold: true, color: .green), terminator: terminator)
+        print("\(prefix)🐘⏱️ \(jobTitle)\(String(format: "%.0f ms", milliseconds))".format(bold: true, color: .green) + suffix, terminator: terminator)
     } else if timeInterval < 60 {
         // Less than 1 minute, display in seconds with 3 decimals
-        print("\(prefix)🐘⏱️ \(jobTitle)\(String(format: "%.3f s", timeInterval))".format(bold: true, color: .green), terminator: terminator)
+        print("\(prefix)🐘⏱️ \(jobTitle)\(String(format: "%.3f s", timeInterval))".format(bold: true, color: .green) + suffix, terminator: terminator)
     } else {
         // 1 minute or more, display in minutes and seconds
         let minutes = Int(timeInterval) / 60
         let seconds = timeInterval.truncatingRemainder(dividingBy: 60)
-        print("\(prefix)🐘⏱️ \(jobTitle)\(String(format: "%d min, %.2f s", minutes, seconds))".format(bold: true, color: .green), terminator: terminator)
+        print("\(prefix)🐘⏱️ \(jobTitle)\(String(format: "%d min, %.2f s", minutes, seconds))".format(bold: true, color: .green) + suffix, terminator: terminator)
     }
     if terminator != "\n" {
         fflush(stdout) // Ensures the text is flushed immediately to the console
+    }
+}
+
+func formatDuration(milliseconds: Int) -> String {
+    let seconds = Double(milliseconds) / 1000
+    if seconds < 1 {
+        return String(format: "%d ms", milliseconds)
+    } else if seconds < 60 {
+        return String(format: "%.3f s", seconds)
+    } else {
+        return String(format: "%d min, %.2f s", Int(seconds) / 60, seconds.truncatingRemainder(dividingBy: 60))
     }
 }
 

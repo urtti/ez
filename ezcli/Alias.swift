@@ -12,6 +12,14 @@ struct Alias: Codable {
         }
     }
 
+    // Recorded as the run history key; " ;; " keeps concurrent commands from reading as a shell pipeline
+    var commandTemplate: String {
+        return switch executionType {
+        case .sequential: commands.joined(separator: " ")
+        case .parallel: commands.joined(separator: " ;; ")
+        }
+    }
+
     var maxPlaceholderIndex: Int {
         var maxIndex = 0
         for command in commands {
@@ -82,12 +90,15 @@ struct Alias: Codable {
         return Alias(executionType: executionType, commands: newCommands, description: description)
     }
 
-    func execute() async {
+    // commandTemplate is the pre-substitution definition, so secrets are never recorded;
+    // displayCommands are pre-secret too, so resolved secrets never reach the terminal.
+    // Returns the exit code ez itself should exit with, so `ez test && deploy` behaves.
+    func execute(aliasName: String, commandTemplate: String, displayCommands: [String]) async -> Int32 {
         switch executionType {
         case .sequential:
-            await runCommands(commands.joined(separator: " "))
+            return await runCommands(commands.joined(separator: " "), aliasName: aliasName, commandTemplate: commandTemplate)
         case .parallel:
-            await runParallelCommands(commands)
+            return await runParallelCommands(commands, displayCommands: displayCommands, aliasName: aliasName, commandTemplate: commandTemplate)
         }
     }
 }

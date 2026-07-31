@@ -21,10 +21,10 @@ Manage alias storage:
     - Delete .ez_cli.json to clear local aliases.
 """,
         version: VERSION,
-        subcommands: [Add.self, Remove.self, List.self, AddSecret.self, RemoveSecret.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
+        subcommands: [Add.self, Remove.self, List.self, Stats.self, AddSecret.self, RemoveSecret.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
     )
 
-    static func main() async throws {
+    static func main() async {
         // Setup signal handlers to forward signals to child processes
         signal(SIGINT) { _ in
             for pid in childPids {
@@ -73,6 +73,8 @@ Manage alias storage:
             Add.main(arguments)
         case "remove":
             Remove.main(arguments)
+        case "stats":
+            await Stats.main(arguments)
         case "add-secret":
             AddSecret.main(arguments)
         case "remove-secret":
@@ -90,6 +92,8 @@ Manage alias storage:
                 exit(withError: CleanExit.helpRequest(Remove.self))
             case "list":
                 exit(withError: CleanExit.helpRequest(List.self))
+            case "stats":
+                exit(withError: CleanExit.helpRequest(Stats.self))
             case "add-secret":
                 exit(withError: CleanExit.helpRequest(AddSecret.self))
             case "remove-secret":
@@ -126,6 +130,7 @@ Manage alias storage:
             print("🐘 Executing: \(resolvedAlias.commandsDescription)".format(bold: true, color: .green))
 
             // Resolve secrets from keychain (after printing, so secrets never appear in output)
+            let displayCommands = resolvedAlias.commands
             let keys = resolvedAlias.secretKeys
             if !keys.isEmpty {
                 var secrets: [String: String] = [:]
@@ -135,12 +140,17 @@ Manage alias storage:
                     } catch let error as KeychainError {
                         printError("Failed to read secret '\(key)': \(error.message)")
                         exit(withError: nil)
+                    } catch {
+                        printError("Failed to read secret '\(key)': \(error)")
+                        exit(withError: nil)
                     }
                 }
                 resolvedAlias = resolvedAlias.substitutingSecrets(secrets)
             }
 
-            await resolvedAlias.execute()
+            let code = await resolvedAlias.execute(aliasName: command, commandTemplate: alias.commandTemplate, displayCommands: displayCommands)
+            // ez's exit status reflects the work it drove, so `ez test && deploy` behaves
+            Foundation.exit(code)
         }
     }
 
