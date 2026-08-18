@@ -556,6 +556,14 @@ ez exitboom > /dev/null 2>&1 || true
 recorded=$(sqlite3 "$EZCLI_HOME/runs.db" "select exit_code from runs where alias_name = 'exitboom' limit 1")
 assert_equals "$recorded" "3" "recorded exit code matches the process exit code"
 
+assert_exit_code "unknown alias exits 1" 1 ez no-such-alias-exists
+
+ez add exitargs 'echo hello {1}' > /dev/null
+assert_exit_code "missing arguments exits 1" 1 ez exitargs
+
+ez add exitsecret 'echo {EZ_ACCEPTANCE_TEST_MISSING_CANARY}' > /dev/null
+assert_exit_code "unreadable secret exits 1" 1 ez exitsecret
+
 # Summary
 echo ""
 echo "======================================="

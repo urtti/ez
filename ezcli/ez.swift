@@ -113,14 +113,14 @@ Manage alias storage:
         default:
             guard let alias = AliasCollection(scope: Scope.local).alias(for: command) else {
                 printError("🐘 Unknown alias: \(command.format(bold: true, color: .blue)).")
-                exit(withError: nil)
+                Foundation.exit(1)
             }
 
             let expectedArgs = alias.maxPlaceholderIndex
             if expectedArgs > 0 && arguments.count < expectedArgs {
                 let placeholders = (1...expectedArgs).map { "<arg\($0)>" }.joined(separator: " ")
                 printError("🐘 Expected \(expectedArgs) argument(s): ez \(command) \(placeholders)")
-                exit(withError: nil)
+                Foundation.exit(1)
             }
 
             var resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: arguments) : alias
@@ -139,10 +139,10 @@ Manage alias storage:
                         secrets[key] = try KeychainManager.readSecret(key: key)
                     } catch let error as KeychainError {
                         printError("Failed to read secret '\(key)': \(error.message)")
-                        exit(withError: nil)
+                        Foundation.exit(1)
                     } catch {
                         printError("Failed to read secret '\(key)': \(error)")
-                        exit(withError: nil)
+                        Foundation.exit(1)
                     }
                 }
                 resolvedAlias = resolvedAlias.substitutingSecrets(secrets)

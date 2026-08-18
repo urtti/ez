@@ -79,7 +79,7 @@ ezcli/
 - **Command routing**: Subcommands (add/remove/list) go through ArgumentParser. Alias execution is custom-routed in `ez.swift main()`.
 - **`Ez.main()` must stay `static func main() async`** — exactly the signature `AsyncParsableCommand` supplies in its extension. Adding `throws` (or otherwise changing it) means it no longer shadows the library's version, so `@main` silently uses ArgumentParser's own entry point, which knows nothing about aliases: every `ez <alias>` then fails with `Error: Unexpected argument '<alias>'`. Verified to fail this way on swift-argument-parser 1.6.1 and 1.8.2 alike. No test catches the signature itself; the alias-execution tests catch the symptom.
 - **Shell**: All commands execute via `/bin/zsh -c`.
-- **Exit codes**: `ez <alias>` exits with the code of the work it drove, so `ez test && deploy` behaves. Sequential aliases propagate the command's code; parallel aliases report the first non-zero in command order (matching what is recorded). A child killed by a signal gives `128 + signal`; a failed spawn gives 126. Note that error paths handled by `exit(withError: nil)` — unknown alias, missing arguments, unreadable secret — still exit **0**.
+- **Exit codes**: `ez <alias>` exits with the code of the work it drove, so `ez test && deploy` behaves. Sequential aliases propagate the command's code; parallel aliases report the first non-zero in command order (matching what is recorded). A child killed by a signal gives `128 + signal`; a failed spawn gives 126. ez's own error paths — unknown alias, missing arguments, unreadable secret — exit **1** (generic failure; codes ≥126 are reserved for describing the child's fate).
 
 ## Alias Storage Format
 
