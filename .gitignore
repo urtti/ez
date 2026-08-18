@@ -11,3 +11,7 @@
 *.xcscmblueprint
 ezcli.xcodeproj/project.xcworkspace/xcuserdata/
 ezcli.xcodeproj/xcuserdata/
+# Internal planning docs — local only, never commit
+ez-run-analytics-design.md
+ez-run-analytics-phase1-plan.md
+audit-2026-08-17.md
