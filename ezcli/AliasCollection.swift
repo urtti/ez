@@ -31,8 +31,6 @@ struct AliasCollection: Codable {
         return AliasCollection(aliases: newAliases)
     }
 
-    // Remove an alias, returning a new AliasCollection instance
-
     func longestAliasName() -> Int {
         aliases.max(by: { $0.key.count < $1.key.count })?.key.count ?? 0
     }
@@ -60,7 +58,7 @@ struct AliasCollection: Codable {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
-            try encoder.encode(self).write(to: url)
+            try encoder.encode(self).write(to: url, options: .atomic)
         } catch {
             printError("Encountered error: \(error)")
         }

@@ -27,7 +27,7 @@ struct List: ParsableCommand {
             // Pad the name with spaces for nice formatting
             let paddingCount = max(0, maxLengthAliasName - item.key.count)
             let name = "ez \(item.key) " + String(repeating: " ", count: paddingCount)
-            print("\(name.format(bold: true, color: item.value.executionType.color)) \(item.value.commandsDescription.format(bold: true, color: .green))")
+            print("\(name.format(bold: true, color: .blue)) \(item.value.commandsDescription.format(bold: true, color: .green))")
 
             if let description = item.value.description, !description.isEmpty, verbose {
                 print("   \(description)")

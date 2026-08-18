@@ -114,11 +114,4 @@ private func shellEscape(_ arg: String) -> String {
 enum ExecutionType: String, Codable {
     case sequential
     case parallel
-
-    var color: FontColor {
-        return switch self {
-        case .sequential: .blue
-        case .parallel: .blue
-        }
-    }
 }
