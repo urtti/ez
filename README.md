@@ -9,12 +9,12 @@ A macOS CLI tool for project-specific command aliases. Define commands locally w
 - **Project-scoped storage** - Aliases live in `.ez_cli.json` files at the directory level, keeping commands tethered to their respective projects
 - **Safety through locality** - No global aliases means no accidental damage in a different directory
 - **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands
-- **Fast** - Built in Swift with zero third-party dependencies and instant startup times
-- **Secrets management** - Store API keys and tokens in Apple Keychain, reference them in aliases without exposing values in terminal output
-- **Private** - Entirely offline with no telemetry or cloud connectivity
+- **Fast** - Built in Swift with a single dependency (swift-argument-parser) and instant startup times
+- **Secrets management** - Store API keys and tokens in Apple Keychain, reference them in aliases without exposing values in terminal output or the process table
+- **Private** - Makes no network calls; run history is recorded locally in `~/.ez/runs.db` and never leaves your machine
 - **Interactive support** - Full terminal passthrough for interactive applications like vim and ssh
 - **Shell integration** - zsh tab completion for command discovery
-- **Built-in analytics** - Automatic runtime tracking logs command execution duration
+- **Built-in analytics** - Local runtime tracking; `ez stats` shows per-alias duration history and trends
 
 ## Installation
 
@@ -84,6 +84,8 @@ ez -p lint test
 ## How It Works
 
 Aliases are stored in `.ez_cli.json` files within each directory. This keeps commands context-specific and prevents conflicts between projects. To clear all aliases in a directory, simply delete the `.ez_cli.json` file.
+
+Every alias run is also recorded in a local SQLite database at `~/.ez/runs.db` (override the location with `$EZCLI_HOME`): working directory, alias name, the command *template* — never substituted arguments or secret values — exit code, duration, and timestamp. Nothing is ever sent anywhere; delete the file to clear all history.
 
 ## Requirements
 
