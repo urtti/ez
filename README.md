@@ -105,45 +105,25 @@ swift run ez
 
 ### Testing
 
-Use the provided script to run tests with the correct flags:
+Run the acceptance test suite:
 
 ```sh
-./run-test.sh
+./acceptance-test.sh
 ```
 
-Or filter specific tests:
+The script builds the binary, runs it in an isolated temp directory, and asserts on output — nothing touches your real aliases, run history, or (aside from a dedicated canary key it cleans up) your Keychain.
+
+Interactive TTY features (vim, less, signal handling) can't be automated; verify those manually with:
 
 ```sh
-./run-test.sh --filter EzTests.testScopeGetURL
-```
-
-**Note:** Do not use `swift test` directly. The `UNIT_TEST` flag must be passed to prevent tests from interfering with your real configuration:
-
-```sh
-swift test -Xswiftc -DUNIT_TEST
-```
-
-### Code Coverage
-
-Generate a coverage report:
-
-```sh
-./run-test-coverage.sh
-```
-
-For a detailed HTML report:
-
-```sh
-llvm-cov show .build/debug/ezcliPackageTests.xctest/Contents/MacOS/ezcliPackageTests \
-  -instr-profile $(swift test --show-codecov-path | tail -n 1) \
-  -format=html -output-dir=coverage
+./acceptance-test-interactive.sh
 ```
 
 ### Project Structure
 
 - `ezcli/` - Source code
-- `test/` - Unit tests
-- `run-test.sh` - Script to run tests with the correct flags
+- `acceptance-test.sh` - Automated test suite
+- `acceptance-test-interactive.sh` - Manual tests for interactive/TTY features
 
 ### Build Requirements
 
