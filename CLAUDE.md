@@ -178,7 +178,7 @@ Alias names `add`, `remove`, `list`, `stats`, `add-secret`, and `remove-secret` 
 
 ## Release Process
 
-`./release.sh <version>` handles the full release: updates version in `ez.swift`, builds, creates GitHub release with tarball, and updates the homebrew tap at `../homebrew-ez`.
+`./release.sh <version>` handles the full release: updates version in `ez.swift`, builds, creates GitHub release with tarball, and updates the homebrew tap at `../homebrew-ez`. The codesign identity is never hard-coded: the script reads `$EZ_CODESIGN_IDENTITY`, falling back to the `EZ_CODESIGN_IDENTITY` Keychain secret (`ez add-secret --key EZ_CODESIGN_IDENTITY --value "Apple Development: ..."`) — the same secret the `install-local` alias in `.ez_cli.json` uses.
 
 Version is stored as `private let VERSION` in `ez.swift`. Do **not** hard-code a `v` prefix in the printed version — `release.sh` writes whatever it is given into `VERSION` (it even guards against a double `vv`), so `./release.sh v1.2.3` would print `vv1.2.3`. The acceptance test is deliberately prefix-agnostic.
 

@@ -11,5 +11,3 @@
 *.xcscmblueprint
 ezcli.xcodeproj/project.xcworkspace/xcuserdata/
 ezcli.xcodeproj/xcuserdata/
-release.sh
-.ez_cli.json
