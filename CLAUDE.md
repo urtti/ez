@@ -174,7 +174,7 @@ Every alias execution records one row in a local SQLite database — `$EZCLI_HOM
 
 ## Protected Keywords
 
-Alias names `add`, `remove`, `list`, `stats`, `add-secret`, and `remove-secret` are reserved and cannot be used (`PROTECTED_KEYWORDS` in `Add.swift`). An alias can still hold a reserved name it acquired *before* the keyword shipped — it is then permanently shadowed, so running that keyword prints a note (to stderr, from the router in `ez.swift`) recommending `ez remove <name>` or re-adding under a different name. `Remove` deliberately has no keyword guard, so removing a shadowed alias works.
+Alias names `add`, `remove`, `list`, `stats`, `add-secret`, and `remove-secret` are reserved and cannot be used (`PROTECTED_KEYWORDS` in `Add.swift`). An alias can still hold a reserved name it acquired *before* the keyword shipped — it is then permanently shadowed, so running that keyword prints a note (to stderr, from the router in `ez.swift`) recommending `ez remove <name>` or adding it under a different name. `Remove` deliberately has no keyword guard, so removing a shadowed alias works.
 
 ## Release Process
 
