@@ -66,6 +66,12 @@ Manage alias storage:
         }
         arguments.removeFirst()
 
+        // An alias stored under a reserved name (e.g. created before that keyword shipped)
+        // can never run — the subcommand always wins. Say so instead of hiding it forever.
+        if PROTECTED_KEYWORDS.contains(command), AliasCollection(scope: Scope.local).alias(for: command) != nil {
+            fputs("🐘 Note: an alias named '\(command)' exists in this directory but is shadowed by the built-in '\(command)' command and can never run. Remove it with 'ez remove \(command)', or re-add it under a different name.\n", stderr)
+        }
+
         switch command {
         case "list":
             List.main(arguments)

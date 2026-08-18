@@ -25,7 +25,7 @@
       ],
       "executionType" : "sequential"
     },
-    "stats" : {
+    "downloads" : {
       "executionType" : "sequential",
       "commands" : [
         "curl -s https:\/\/api.github.com\/repos\/urtti\/homebrew-ez\/releases | jq '.[] | {tag: .tag_name, assets: [.assets[] | {name: .name, count: .download_count}]}'"

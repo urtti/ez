@@ -156,6 +156,19 @@ assert_contains "$output" "protected keyword" "cannot add alias named 'add'"
 output=$(ez nonexistent 2>&1 || true)
 assert_contains "$output" "Unknown alias" "unknown alias shows error"
 
+# Shadowed aliases: a reserved-name alias (predating the keyword) warns on every keyword run.
+# ez add refuses these names, so seed the file directly, in its own directory.
+mkdir -p shadowdir
+cd shadowdir
+printf '{"aliases":{"stats":{"executionType":"sequential","commands":["echo hi"]}}}' > .ez_cli.json
+output=$(ez stats)
+assert_contains "$output" "shadowed by the built-in 'stats'" "reserved-name alias warns when its keyword runs"
+output=$(ez list)
+assert_equals "$(echo "$output" | grep -c "shadowed")" "0" "other keywords do not warn about it"
+output=$(ez remove stats && ez stats)
+assert_equals "$(echo "$output" | grep -c "shadowed")" "0" "removing the shadowed alias clears the warning"
+cd ..
+
 # Parallel execution
 echo ""
 echo "## Parallel Execution"
