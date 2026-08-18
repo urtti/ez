@@ -20,15 +20,12 @@ struct Alias: Codable {
         }
     }
 
+    // Only counts placeholders substituting(arguments:) can fill: {1}–{99}, no leading zeros.
     var maxPlaceholderIndex: Int {
         var maxIndex = 0
         for command in commands {
-            for i in 1...99 {
-                if command.contains("{\(i)}") {
-                    maxIndex = max(maxIndex, i)
-                } else if i > maxIndex + 1 {
-                    break
-                }
+            for match in command.matches(of: /\{([1-9][0-9]?)\}/) {
+                maxIndex = max(maxIndex, Int(match.1) ?? 0)
             }
         }
         return maxIndex

@@ -123,7 +123,8 @@ Manage alias storage:
                 Foundation.exit(1)
             }
 
-            var resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: arguments) : alias
+            // First expectedArgs fill placeholders; the rest are appended, so no argument is used twice
+            var resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: Array(arguments.prefix(expectedArgs))) : alias
             let extraArgs = Array(arguments.dropFirst(expectedArgs))
             resolvedAlias = resolvedAlias.appending(extraArguments: extraArgs)
 

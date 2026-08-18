@@ -207,6 +207,18 @@ assert_contains "$output" "Expected 1 argument(s)" "missing args shows error"
 output=$(ez list)
 assert_contains "$output" "{1}" "list shows placeholder templates"
 
+# A gap in placeholder numbering ({1}+{4}) must demand 4 args, not stop counting at the gap
+ez add pgap 'echo a={1} d={4}'
+output=$(ez pgap 1 || true)
+assert_contains "$output" "Expected 4 argument(s)" "placeholder gap still counts highest index"
+
+output=$(ez pgap w x y z | grep '^a=')
+assert_equals "$output" "a=w d=z" "gapped placeholders substitute without re-appending used args"
+
+# One extra arg beyond the highest placeholder is appended exactly once
+output=$(ez pgap w x y z extra | grep '^a=')
+assert_equals "$output" "a=w d=z extra" "extra arg after gapped placeholders appended once"
+
 ## Extra Arguments Appended
 ez add noparams "echo static"
 output=$(ez noparams extraarg)
