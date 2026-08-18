@@ -344,6 +344,47 @@ if ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force
         echo "✓ parallel output never prints a resolved secret"
         ((++PASS))
     fi
+
+    # Secrets travel via the child's environment, never argv, so the resolved value must
+    # not be visible in `ps`. A sleeping child keeps its argv sampleable long enough.
+    ez add pscanary 'sleep 2 && echo token={EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    ez pscanary > /dev/null 2>&1 &
+    PSCANARY_PID=$!
+    sleep 1
+    if ps -ww -ax -o command 2>/dev/null | grep -v grep | grep -q "$CANARY_VALUE"; then
+        echo "✗ resolved secret never appears in process argv (ps)"
+        ((++FAIL))
+    else
+        echo "✓ resolved secret never appears in process argv (ps)"
+        ((++PASS))
+    fi
+    wait $PSCANARY_PID || true
+
+    # The same env-passing path in parallel mode
+    ez add pscanarypar -p 'sleep 2 && echo token={EZ_ACCEPTANCE_TEST_CANARY} > /dev/null' 'sleep 2' > /dev/null
+    ez pscanarypar > /dev/null 2>&1 &
+    PSCANARY_PID=$!
+    sleep 1
+    if ps -ww -ax -o command 2>/dev/null | grep -v grep | grep -q "$CANARY_VALUE"; then
+        echo "✗ resolved secret never appears in parallel process argv (ps)"
+        ((++FAIL))
+    else
+        echo "✓ resolved secret never appears in parallel process argv (ps)"
+        ((++PASS))
+    fi
+    wait $PSCANARY_PID || true
+
+    # A secret full of shell-hostile characters must survive the "$EZ_FOO" expansion intact
+    TRICKY_VALUE='sp ace "dq" $dollar '\''sq'\'' *glob'
+    ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$TRICKY_VALUE" --force > /dev/null
+    ez add trickysecret 'echo "got:{EZ_ACCEPTANCE_TEST_CANARY}"' > /dev/null
+    tricky_line=$(ez trickysecret | grep '^got:' || true)
+    assert_equals "$tricky_line" "got:$TRICKY_VALUE" "secret with spaces/quotes/\$ arrives intact"
+
+    ez add trickybare 'echo got:{EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    tricky_line=$(ez trickybare | grep '^got:' || true)
+    assert_equals "$tricky_line" "got:$TRICKY_VALUE" "unquoted secret placeholder arrives intact"
+
     ez remove-secret EZ_ACCEPTANCE_TEST_CANARY > /dev/null 2>&1 || true
 else
     echo "⚠ skipped keychain canary tests (keychain unavailable)"

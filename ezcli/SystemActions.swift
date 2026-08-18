@@ -2,8 +2,29 @@ import Foundation
 
 @MainActor var childPids: Set<pid_t> = []
 
+// Secrets ride in the child's environment instead of argv, so resolved values never show
+// up in the process table (`ps`). An inherited variable with the same name is replaced,
+// so the Keychain value always wins. Caller frees every entry.
+private func makeSpawnEnvironment(secrets: [String: String]) -> [UnsafeMutablePointer<CChar>?] {
+    var entries: [UnsafeMutablePointer<CChar>?] = []
+    var i = 0
+    while let entry = environ[i] {
+        let text = String(cString: entry)
+        let name = String(text.prefix(while: { $0 != "=" }))
+        if secrets[name] == nil {
+            entries.append(strdup(text))
+        }
+        i += 1
+    }
+    for (key, value) in secrets {
+        entries.append(strdup("\(key)=\(value)"))
+    }
+    entries.append(nil)
+    return entries
+}
+
 // Returns the exit code the alias produced. Spawn failure is 126, an unwaitable child is 1.
-@MainActor func runCommands(_ command: String, aliasName: String, commandTemplate: String) async -> Int32 {
+@MainActor func runCommands(_ command: String, aliasName: String, commandTemplate: String, secrets: [String: String]) async -> Int32 {
     let start = Date()
     let clock = ContinuousClock()
     let begin = clock.now
@@ -31,7 +52,12 @@ import Foundation
         for arg in args { free(arg) }
     }
 
-    let result = posix_spawn(&pid, shell, &fileActions, nil, args, environ)
+    let envp = makeSpawnEnvironment(secrets: secrets)
+    defer {
+        for entry in envp { free(entry) }
+    }
+
+    let result = posix_spawn(&pid, shell, &fileActions, nil, args, envp)
     posix_spawn_file_actions_destroy(&fileActions)
 
     if result == 0 {
@@ -67,7 +93,7 @@ import Foundation
 
 // displayCommands hold the pre-secret text, so resolved secrets stay out of the terminal.
 // Returns the first non-zero exit code in command order, matching what gets recorded.
-func runParallelCommands(_ commands: [String], displayCommands: [String], aliasName: String, commandTemplate: String) async -> Int32 {
+func runParallelCommands(_ commands: [String], displayCommands: [String], aliasName: String, commandTemplate: String, secrets: [String: String]) async -> Int32 {
     print("🐘 Running in parallel: \(displayCommands.joined(separator: ", "))".format(bold: true, color: .green))
     fflush(stdout)
     let start = Date()
@@ -80,7 +106,7 @@ func runParallelCommands(_ commands: [String], displayCommands: [String], aliasN
         for (index, command) in commands.enumerated() {
             let displayCommand = index < displayCommands.count ? displayCommands[index] : command
             taskGroup.addTask {
-                (index, await runSingleParallelJob(command, displayCommand: displayCommand))
+                (index, await runSingleParallelJob(command, displayCommand: displayCommand, secrets: secrets))
             }
         }
         for await (index, code) in taskGroup {
@@ -127,7 +153,7 @@ private func outlierNote(aliasName: String, durationMs: Int) async -> String? {
 }
 
 // nil when the exit code could not be determined
-private func runSingleParallelJob(_ command: String, displayCommand: String) async -> Int32? {
+private func runSingleParallelJob(_ command: String, displayCommand: String, secrets: [String: String]) async -> Int32? {
     let start = Date()
     let shell = "/bin/zsh"
     var pid: pid_t = 0
@@ -148,7 +174,12 @@ private func runSingleParallelJob(_ command: String, displayCommand: String) asy
         for arg in args { free(arg) }
     }
 
-    let result = posix_spawn(&pid, shell, &fileActions, nil, args, environ)
+    let envp = makeSpawnEnvironment(secrets: secrets)
+    defer {
+        for entry in envp { free(entry) }
+    }
+
+    let result = posix_spawn(&pid, shell, &fileActions, nil, args, envp)
     posix_spawn_file_actions_destroy(&fileActions)
 
     if result == 0 {

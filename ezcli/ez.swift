@@ -129,11 +129,12 @@ Manage alias storage:
 
             print("🐘 Executing: \(resolvedAlias.commandsDescription)".format(bold: true, color: .green))
 
-            // Resolve secrets from keychain (after printing, so secrets never appear in output)
+            // Resolve secrets from keychain (after printing, so secrets never appear in output).
+            // Values go to the child via its environment, never argv, so they stay out of `ps`.
             let displayCommands = resolvedAlias.commands
             let keys = resolvedAlias.secretKeys
+            var secrets: [String: String] = [:]
             if !keys.isEmpty {
-                var secrets: [String: String] = [:]
                 for key in keys {
                     do {
                         secrets[key] = try KeychainManager.readSecret(key: key)
@@ -145,10 +146,10 @@ Manage alias storage:
                         Foundation.exit(1)
                     }
                 }
-                resolvedAlias = resolvedAlias.substitutingSecrets(secrets)
+                resolvedAlias = resolvedAlias.referencingSecretsFromEnvironment(keys)
             }
 
-            let code = await resolvedAlias.execute(aliasName: command, commandTemplate: alias.commandTemplate, displayCommands: displayCommands)
+            let code = await resolvedAlias.execute(aliasName: command, commandTemplate: alias.commandTemplate, displayCommands: displayCommands, secrets: secrets)
             // ez's exit status reflects the work it drove, so `ez test && deploy` behaves
             Foundation.exit(code)
         }

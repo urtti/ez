@@ -69,11 +69,14 @@ struct Alias: Codable {
         return keys
     }
 
-    func substitutingSecrets(_ secrets: [String: String]) -> Alias {
+    // Secrets travel to the child in its environment, never argv, so resolved values stay
+    // out of the process table (`ps`). Each {EZ_FOO} becomes "$EZ_FOO" — double-quoted, so
+    // zsh expands it without word-splitting or globbing mangling the value.
+    func referencingSecretsFromEnvironment(_ keys: Set<String>) -> Alias {
         let substitutedCommands = commands.map { command in
             var result = command
-            for (key, value) in secrets {
-                result = result.replacingOccurrences(of: "{\(key)}", with: value)
+            for key in keys {
+                result = result.replacingOccurrences(of: "{\(key)}", with: "\"$\(key)\"")
             }
             return result
         }
@@ -92,13 +95,14 @@ struct Alias: Codable {
 
     // commandTemplate is the pre-substitution definition, so secrets are never recorded;
     // displayCommands are pre-secret too, so resolved secrets never reach the terminal.
+    // secrets are exported into the child's environment, keeping values out of argv.
     // Returns the exit code ez itself should exit with, so `ez test && deploy` behaves.
-    func execute(aliasName: String, commandTemplate: String, displayCommands: [String]) async -> Int32 {
+    func execute(aliasName: String, commandTemplate: String, displayCommands: [String], secrets: [String: String]) async -> Int32 {
         switch executionType {
         case .sequential:
-            return await runCommands(commands.joined(separator: " "), aliasName: aliasName, commandTemplate: commandTemplate)
+            return await runCommands(commands.joined(separator: " "), aliasName: aliasName, commandTemplate: commandTemplate, secrets: secrets)
         case .parallel:
-            return await runParallelCommands(commands, displayCommands: displayCommands, aliasName: aliasName, commandTemplate: commandTemplate)
+            return await runParallelCommands(commands, displayCommands: displayCommands, aliasName: aliasName, commandTemplate: commandTemplate, secrets: secrets)
         }
     }
 }

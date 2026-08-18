@@ -147,8 +147,9 @@ ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/dep
 **How it works:**
 - `ez add-secret --key EZ_KEY --value val` stores a secret in macOS Keychain (service: `com.urtti.ez`). Use `--force` to overwrite.
 - `ez remove-secret EZ_KEY` deletes a secret from Keychain.
-- At execution time, `Alias.secretKeys` scans commands for `{EZ_*}` patterns, then `ez.swift` reads each key from Keychain and substitutes values via `Alias.substitutingSecrets(_:)`.
-- Secret substitution happens **after** the "Executing:" line is printed, so secret values never appear in terminal output.
+- At execution time, `Alias.secretKeys` scans commands for `{EZ_*}` patterns, then `ez.swift` reads each key from Keychain. Values are passed to the child **via its environment** (`posix_spawn` `envp`, built in `SystemActions.makeSpawnEnvironment`), and `Alias.referencingSecretsFromEnvironment(_:)` rewrites each `{EZ_FOO}` to `"$EZ_FOO"` — so resolved values never appear in the child's argv, keeping them out of `ps`. An inherited env var with the same name is dropped so the Keychain value wins.
+- Because `"$EZ_FOO"` doesn't expand inside single quotes, a placeholder single-quoted *within* the stored command stays literal. All documented examples put placeholders in double quotes, which work as before.
+- Secret resolution happens **after** the "Executing:" line is printed, so secret values never appear in terminal output.
 - Key names must match `^EZ_[A-Z0-9_]+$` — validated both in `AddSecret` and in `Alias.secretKeys`.
 - Keychain storage uses `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` for security.
 - Errors (missing secret, auth failure) are reported and execution is aborted.
