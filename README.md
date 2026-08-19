@@ -8,7 +8,7 @@ A macOS CLI tool for project-specific command aliases. Define commands locally w
 
 - **Project-scoped storage** - Aliases live in `.ez_cli.json` files at the directory level, keeping commands tethered to their respective projects
 - **Safety through locality** - No global aliases means no accidental damage in a different directory
-- **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands
+- **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands. As with a `Makefile` or `npm run`, running an alias from a cloned repo runs whatever commands that repo's authors defined — review `.ez_cli.json` before running aliases from sources you don't trust
 - **Fast** - Built in Swift with instant startup times and no third-party dependencies — the only package used is Apple's own swift-argument-parser
 - **Secrets management** - Store API keys and tokens in Apple Keychain, reference them in aliases without exposing values in terminal output or the process table
 - **Private** - Makes no network calls; run history is recorded locally in `~/.ez/runs.db` and never leaves your machine
