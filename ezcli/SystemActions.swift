@@ -270,6 +270,8 @@ private func recordRun(aliasName: String, commandTemplate: String, executionType
         executionType: executionType,
         exitCode: exitCode,
         durationMs: durationMs,
-        startedAt: startedAt
+        startedAt: startedAt,
+        // Captured after the command finished, so it costs the measured duration nothing
+        context: RunContext.capture()
     ))
 }

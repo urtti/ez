@@ -39,7 +39,7 @@ output=$(ez myalias arg1)
 assert_contains "$output" "something arg1" "description of what is being tested"
 ```
 
-**Test categories covered:** version/help, add/remove/list, alias execution, parallel mode, shell expansion, sequential commands, parameter substitution, extra argument overflow, secret placeholders, add-secret validation, error cases, run history (recording, secret safety, summary and trend).
+**Test categories covered:** version/help, add/remove/list, alias execution, parallel mode, shell expansion, sequential commands, parameter substitution, extra argument overflow, secret placeholders, add-secret validation, error cases, run history (recording, secret safety, summary and trend, machine context).
 
 There is also `acceptance-test-interactive.sh` for manual verification of TTY features (vim, less, signal handling) that can't be automated.
 
@@ -56,9 +56,11 @@ ezcli/
   TerminalOutput.swift  # ANSI formatting, timing, error output
   Telemetry/
     TelemetryPaths.swift # Telemetry root ($EZCLI_HOME or ~/.ez) and DB path
-    RunRecord.swift      # One recorded alias run
+    RunRecord.swift      # One recorded alias run + RunContext (machine/boot facts per run)
     RunSummary.swift     # Count/min/median/p90/max plus RunTrend over successful runs
     RunStore.swift       # actor RunStore: sqlite3 connection, schema migration, insert/query
+    MachineInfo.swift    # Hardware/OS specs via sysctl; persisted random machine UUID
+    RunsSinceBoot.swift  # Approximate per-boot run counter (cold/warm proxy)
   commands/
     Add.swift           # `ez add` — creates aliases (-p for parallel, -d for description)
     AddSecret.swift     # `ez add-secret` — stores secrets in Keychain
@@ -164,6 +166,7 @@ Every alias execution records one row in a local SQLite database — `$EZCLI_HOM
 - `Telemetry/TelemetryPaths.swift` resolves the root; `acceptance-test.sh` exports `EZCLI_HOME` to a per-run temp dir so tests never touch real history.
 - `Telemetry/RunStore.swift` is the only file using the sqlite3 C API — an actor owning one connection, with WAL + `busy_timeout=2000` for concurrent `ez` processes, and migrations gated on `PRAGMA user_version`. Writes that fail are reported via `printError` and swallowed; telemetry must never fail the user's command.
 - Schema v1 — `runs`: `cwd`, `alias_name`, `command_template`, `execution_type`, `exit_code`, `duration_ms`, `started_at`. Queries always scope by `cwd`, since aliases are per-directory.
+- Schema v2 adds nullable machine-context columns to `runs`: `machine_id`, `hw_model`, `cpu_brand`, `perf_cores`, `efficiency_cores`, `memory_bytes`, `os_version`, `runs_since_boot`. Captured after the command finishes (`RunContext.capture()`), so it never inflates the measured duration. Nothing aggregates them yet — they exist because rows can't be backfilled and later cohorting keys on hardware spec. Intel Macs lack the `hw.perflevel*` sysctl keys: all logical cores are recorded as performance cores, `efficiency_cores` is 0, and `ez stats -v` then prints "N cores" without the P/E split. The machine ID is a locally generated UUID persisted at `<root>/machine_id` — never derived from hostname or username. `runs_since_boot` is an approximate counter in `<root>/runs_since_boot` keyed on `kern.boottime`; its cross-process read-modify-write race is accepted (it's a cold/warm proxy). Default `ez stats` output is unchanged; `ez stats <alias> -v` appends `run N since boot` per row and prints one machine block (specs are identical on every row from one machine, so they print once). Rows from before v2 have NULL context and are tolerated everywhere.
 - `command_template` is the **pre-substitution** alias definition (`alias.commandTemplate`), so arguments and resolved `{EZ_*}` secrets are never written to disk. Parallel commands join with `" ;; "` there, so a recorded template never reads as a shell pipeline.
 - One row per invocation, including parallel aliases: `duration_ms` is total wall time measured with `ContinuousClock`, `exit_code` is the first non-zero **in command order**. Exit status is decoded from `waitpid` (signal → `128 + signal`); a run whose exit code can't be determined is not recorded at all.
 - Parallel mode prints the pre-secret `displayCommands`, so resolved secrets never reach the terminal either.

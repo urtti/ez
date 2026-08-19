@@ -12,6 +12,9 @@ struct Stats: AsyncParsableCommand {
     @Argument(help: "The name of the alias to show history for. Omit to summarize every alias with history.")
     var name: String?
 
+    @Flag(name: .shortAndLong, help: "Also show the machine context recorded with each run.")
+    var verbose = false
+
     func run() async throws {
         let cwd = FileManager.default.currentDirectoryPath
         if let name {
@@ -38,7 +41,17 @@ struct Stats: AsyncParsableCommand {
         for (run, duration) in zip(runs, durations) {
             let padded = String(repeating: " ", count: max(0, maxDurationLength - duration.count)) + duration
             let status = run.exitCode == 0 ? "ok".format(bold: true, color: .green) : "exit \(run.exitCode)".format(bold: true, color: .red)
-            print("\(formatter.string(from: run.startedAt))  \(padded.format(bold: true, color: .green))  \(status)")
+            // runs-since-boot is the per-row part of the context: a cold/warm hint next to the timing
+            let bootNote = verbose ? run.context.map { "  run \($0.runsSinceBoot) since boot" } ?? "" : ""
+            print("\(formatter.string(from: run.startedAt))  \(padded.format(bold: true, color: .green))  \(status)\(bootNote)")
+        }
+
+        // The specs are identical on every row from one machine, so they print once
+        if verbose, let context = runs.compactMap(\.context).first {
+            print("")
+            print("🐘 Machine (as recorded on the latest run)".formatBold())
+            print(describeMachine(context.machine).format(bold: true, color: .green))
+            print("machine id \(context.machineID)")
         }
 
         guard let summary = await RunStore.shared.summary(cwd: cwd, alias: name) else {
@@ -57,6 +70,15 @@ struct Stats: AsyncParsableCommand {
         ].joined(separator: "  ")
         print(stats.format(bold: true, color: .green))
         print("trend \(summary.trend.arrow) \(summary.trend.sentence.format(bold: true, color: summary.trend.color))")
+    }
+
+    private func describeMachine(_ machine: MachineInfo) -> String {
+        // Intel Macs record zero efficiency cores; a P/E split of "10P + 0E" would be noise there
+        let cores = machine.efficiencyCores > 0
+            ? "\(machine.performanceCores)P + \(machine.efficiencyCores)E cores"
+            : "\(machine.performanceCores) cores"
+        let memory = String(format: "%.0f GB", Double(machine.memoryBytes) / 1_073_741_824)
+        return "\(machine.model)  \(machine.cpuBrand)  \(cores)  \(memory)  macOS \(machine.osVersion)"
     }
 
     private func showOverview(cwd: String) async {

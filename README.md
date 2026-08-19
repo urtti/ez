@@ -92,7 +92,7 @@ ez -p lint test
 
 Aliases are stored in `.ez_cli.json` files within each directory. This keeps commands context-specific and prevents conflicts between projects. To clear all aliases in a directory, simply delete the `.ez_cli.json` file.
 
-Every alias run is also recorded in a local SQLite database at `~/.ez/runs.db` (override the location with `$EZCLI_HOME`): working directory, alias name, the command *template* — never substituted arguments or secret values — exit code, duration, and timestamp. Nothing is ever sent anywhere; delete the file to clear all history.
+Every alias run is also recorded in a local SQLite database at `~/.ez/runs.db` (override the location with `$EZCLI_HOME`): working directory, alias name, the command *template* — never substituted arguments or secret values — exit code, duration, and timestamp, plus machine context for reading the timing series later (hardware model, CPU, core counts, RAM, macOS version, a locally generated random machine ID stored at `~/.ez/machine_id`, and a runs-since-boot counter — nothing derived from your hostname or username). View it with `ez stats <alias> -v`. Nothing is ever sent anywhere; delete the files to clear all history.
 
 ## Requirements
 

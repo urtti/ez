@@ -659,6 +659,60 @@ assert_exit_code "missing arguments exits 1" 1 ez exitargs
 ez add exitsecret 'echo {EZ_ACCEPTANCE_TEST_MISSING_CANARY}' > /dev/null
 assert_exit_code "unreadable secret exits 1" 1 ez exitsecret
 
+# Machine and boot context recorded with every run (schema v2)
+echo ""
+echo "## Machine Context"
+
+ez add ctxrun "echo ctx" > /dev/null
+ez ctxrun > /dev/null
+ez ctxrun > /dev/null
+
+missing=$(sqlite3 "$EZCLI_HOME/runs.db" "select count(*) from runs where alias_name = 'ctxrun' and (machine_id is null or hw_model is null or cpu_brand is null or perf_cores is null or efficiency_cores is null or memory_bytes is null or os_version is null or runs_since_boot is null)")
+assert_equals "$missing" "0" "every run records the full machine context"
+
+distinct_ids=$(sqlite3 "$EZCLI_HOME/runs.db" "select count(distinct machine_id) from runs where machine_id is not null")
+assert_equals "$distinct_ids" "1" "machine id is stable across runs"
+
+stored_id=$(cat "$EZCLI_HOME/machine_id")
+recorded_id=$(sqlite3 "$EZCLI_HOME/runs.db" "select distinct machine_id from runs where machine_id is not null")
+assert_equals "$recorded_id" "$stored_id" "recorded machine id matches the persisted machine_id file"
+
+first_count=$(sqlite3 "$EZCLI_HOME/runs.db" "select runs_since_boot from runs where alias_name = 'ctxrun' order by id limit 1")
+second_count=$(sqlite3 "$EZCLI_HOME/runs.db" "select runs_since_boot from runs where alias_name = 'ctxrun' order by id desc limit 1")
+if [ "$second_count" -gt "$first_count" ]; then
+    echo "✓ runs-since-boot counter increments across runs"
+    ((++PASS))
+else
+    echo "✗ runs-since-boot counter increments across runs ($first_count -> $second_count)"
+    ((++FAIL))
+fi
+
+output=$(ez stats ctxrun -v)
+assert_contains "$output" "Machine" "stats -v shows the machine block"
+assert_contains "$output" "since boot" "stats -v shows runs since boot per row"
+assert_contains "$output" "machine id $stored_id" "stats -v shows the machine id"
+
+output=$(ez stats ctxrun)
+if echo "$output" | grep -q "since boot\|machine id"; then
+    echo "✗ default stats output stays free of machine context"
+    ((++FAIL))
+else
+    echo "✓ default stats output stays free of machine context"
+    ((++PASS))
+fi
+
+# Rows written before schema v2 carry no context; stats -v must tolerate them
+seed_run ctxlegacy 100 2000
+output=$(ez stats ctxlegacy -v)
+assert_contains "$output" "Recent runs" "stats -v tolerates rows without context"
+if echo "$output" | grep -q "Machine (as recorded"; then
+    echo "✗ stats -v omits the machine block when no row has context"
+    ((++FAIL))
+else
+    echo "✓ stats -v omits the machine block when no row has context"
+    ((++PASS))
+fi
+
 # Summary
 echo ""
 echo "======================================="
