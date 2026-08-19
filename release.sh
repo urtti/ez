@@ -21,13 +21,20 @@ if [[ -n $(git diff --cached --name-only) ]]; then
   exit 1
 fi
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $0 <semantic-version> (e.g., 0.7.1)"
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: $0 <semantic-version> [release-notes-file] (e.g., 0.7.1 notes.md)"
   exit 1
 fi
 
 VERSION="$1"
 TAG="$VERSION"
+NOTES_FILE="${2:-}"
+
+# Fail early: a missing or empty notes file should not surface after the push.
+if [ -n "$NOTES_FILE" ] && [ ! -s "$NOTES_FILE" ]; then
+  echo "ERROR: Release notes file '$NOTES_FILE' does not exist or is empty."
+  exit 1
+fi
 
 # If tag has double v prefix, remove one of them
 if [[ "$TAG" == "vv"* ]]; then
@@ -84,11 +91,20 @@ git push origin "$TAG"
 
 # 7. Create GitHub release on urtti/ez and upload the tarball
 echo "Creating GitHub release and uploading asset..."
+if [ -n "$NOTES_FILE" ]; then
+  NOTES_ARGS=(--notes-file "$NOTES_FILE")
+else
+  NOTES_ARGS=(--notes "Release $TAG")
+fi
 if gh release view "$TAG" &>/dev/null; then
   echo "Release $TAG already exists, uploading asset..."
   gh release upload "$TAG" "$TARBALL" --clobber
+  if [ -n "$NOTES_FILE" ]; then
+    echo "Updating release notes from $NOTES_FILE..."
+    gh release edit "$TAG" "${NOTES_ARGS[@]}"
+  fi
 else
-  gh release create "$TAG" "$TARBALL" --title "$TAG" --notes "Release $TAG"
+  gh release create "$TAG" "$TARBALL" --title "$TAG" "${NOTES_ARGS[@]}"
 fi
 
 rm "$TARBALL"
