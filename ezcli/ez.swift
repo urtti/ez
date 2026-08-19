@@ -25,34 +25,12 @@ Manage alias storage:
     )
 
     static func main() async {
-        // Setup signal handlers to forward signals to child processes
-        signal(SIGINT) { _ in
-            for pid in childPids {
-                kill(pid, SIGINT)
-            }
-        }
-
-        signal(SIGTERM) { _ in
-            for pid in childPids {
-                kill(pid, SIGTERM)
-            }
-        }
-
-        signal(SIGQUIT) { _ in
-            for pid in childPids {
-                kill(pid, SIGQUIT)
-            }
-        }
-
-        signal(SIGTSTP) { _ in
-            for pid in childPids {
-                kill(pid, SIGTSTP)
-            }
-        }
-
-        signal(SIGCONT) { _ in
-            for pid in childPids {
-                kill(pid, SIGCONT)
+        // Setup signal handlers to forward signals to child processes. The PID table must
+        // exist before any handler can fire — see initializeChildPidTable.
+        initializeChildPidTable()
+        for sig in [SIGINT, SIGTERM, SIGQUIT, SIGTSTP, SIGCONT] {
+            signal(sig) { received in
+                forwardSignalToChildren(received)
             }
         }
 

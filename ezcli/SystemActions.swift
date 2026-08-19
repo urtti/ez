@@ -1,6 +1,60 @@
 import Foundation
+import Synchronization
 
-@MainActor var childPids: Set<pid_t> = []
+// Child PIDs live in a fixed table of atomic slots, not a Swift collection, because the
+// signal handlers installed in ez.swift read it. A C signal handler may only perform
+// async-signal-safe operations; Swift collections can allocate or take runtime locks, which
+// deadlocks or corrupts state if the signal lands mid-mutation. Atomic loads and stores on
+// pre-allocated memory are safe from a handler. A slot holding 0 is free. 64 slots is far
+// more than one invocation can spawn (parallel aliases run one child per command).
+private let CHILD_PID_SLOTS = 64
+// nonisolated(unsafe) is sound here: every access goes through the atomics, never the pointer itself
+private nonisolated(unsafe) let childPidTable: UnsafeMutablePointer<Atomic<pid_t>> = {
+    let table = UnsafeMutablePointer<Atomic<pid_t>>.allocate(capacity: CHILD_PID_SLOTS)
+    for i in 0..<CHILD_PID_SLOTS {
+        (table + i).initialize(to: Atomic(0))
+    }
+    return table
+}()
+
+// Swift globals initialize lazily on first access, and that first access must never come
+// from a signal handler (the once-guard allocates). main() calls this before installing
+// the handlers so the table provably exists by the time one can fire.
+func initializeChildPidTable() {
+    _ = childPidTable
+}
+
+func registerChildPid(_ pid: pid_t) {
+    for i in 0..<CHILD_PID_SLOTS {
+        if (childPidTable + i).pointee.compareExchange(
+            expected: 0, desired: pid, ordering: .sequentiallyConsistent
+        ).exchanged {
+            return
+        }
+    }
+    // Table full: the child just won't receive forwarded signals — never fail the run over it
+}
+
+func unregisterChildPid(_ pid: pid_t) {
+    for i in 0..<CHILD_PID_SLOTS {
+        if (childPidTable + i).pointee.compareExchange(
+            expected: pid, desired: 0, ordering: .sequentiallyConsistent
+        ).exchanged {
+            return
+        }
+    }
+}
+
+// Called from C signal handlers: nothing here may allocate, lock, or call the Swift
+// runtime — only atomic loads and kill(2), both async-signal-safe.
+func forwardSignalToChildren(_ sig: Int32) {
+    for i in 0..<CHILD_PID_SLOTS {
+        let pid = (childPidTable + i).pointee.load(ordering: .sequentiallyConsistent)
+        if pid != 0 {
+            kill(pid, sig)
+        }
+    }
+}
 
 // Secrets ride in the child's environment instead of argv, so resolved values never show
 // up in the process table (`ps`). An inherited variable with the same name is replaced,
@@ -23,25 +77,28 @@ private func makeSpawnEnvironment(secrets: [String: String]) -> [UnsafeMutablePo
     return entries
 }
 
-// Returns the exit code the alias produced. Spawn failure is 126, an unwaitable child is 1.
-@MainActor func runCommands(_ command: String, aliasName: String, commandTemplate: String, secrets: [String: String]) async -> Int32 {
-    let start = Date()
-    let clock = ContinuousClock()
-    let begin = clock.now
-
+// Spawns `/bin/zsh -c command` with stdin/stdout/stderr inherited (TTY passthrough).
+// The child gets an EMPTY signal mask via POSIX_SPAWN_SETSIGMASK: posix_spawn children
+// inherit the spawning thread's mask, and the Swift-concurrency worker threads that run
+// parallel jobs keep signals blocked — a child inheriting that mask never receives a
+// forwarded Ctrl+C (verified: parallel children survived SIGINT until this was added).
+private func spawnShellCommand(_ command: String, secrets: [String: String]) -> (result: Int32, pid: pid_t) {
     let shell = "/bin/zsh"
     var pid: pid_t = 0
 
-    // Set up posix_spawn to inherit file descriptors (including TTY)
     var fileActions: posix_spawn_file_actions_t?
     posix_spawn_file_actions_init(&fileActions)
-
-    // Inherit stdin/stdout/stderr (file descriptors 0, 1, 2)
     posix_spawn_file_actions_adddup2(&fileActions, STDIN_FILENO, STDIN_FILENO)
     posix_spawn_file_actions_adddup2(&fileActions, STDOUT_FILENO, STDOUT_FILENO)
     posix_spawn_file_actions_adddup2(&fileActions, STDERR_FILENO, STDERR_FILENO)
 
-    // Build args array
+    var attrs: posix_spawnattr_t?
+    posix_spawnattr_init(&attrs)
+    var noBlockedSignals = sigset_t()
+    sigemptyset(&noBlockedSignals)
+    posix_spawnattr_setsigmask(&attrs, &noBlockedSignals)
+    posix_spawnattr_setflags(&attrs, Int16(POSIX_SPAWN_SETSIGMASK))
+
     let args: [UnsafeMutablePointer<CChar>?] = [
         strdup(shell),
         strdup("-c"),
@@ -57,14 +114,25 @@ private func makeSpawnEnvironment(secrets: [String: String]) -> [UnsafeMutablePo
         for entry in envp { free(entry) }
     }
 
-    let result = posix_spawn(&pid, shell, &fileActions, nil, args, envp)
+    let result = posix_spawn(&pid, shell, &fileActions, &attrs, args, envp)
     posix_spawn_file_actions_destroy(&fileActions)
+    posix_spawnattr_destroy(&attrs)
+    return (result, pid)
+}
+
+// Returns the exit code the alias produced. Spawn failure is 126, an unwaitable child is 1.
+@MainActor func runCommands(_ command: String, aliasName: String, commandTemplate: String, secrets: [String: String]) async -> Int32 {
+    let start = Date()
+    let clock = ContinuousClock()
+    let begin = clock.now
+
+    let (result, pid) = spawnShellCommand(command, secrets: secrets)
 
     if result == 0 {
-        childPids.insert(pid)
+        registerChildPid(pid)
         var status: Int32 = 0
         let waited = waitpid(pid, &status, 0)
-        childPids.remove(pid)
+        unregisterChildPid(pid)
         let elapsedMs = milliseconds(from: clock.now - begin)
         // A failed wait leaves status unwritten, so there is no exit code worth recording
         guard waited == pid else {
@@ -155,44 +223,16 @@ private func outlierNote(aliasName: String, durationMs: Int) async -> String? {
 // nil when the exit code could not be determined
 private func runSingleParallelJob(_ command: String, displayCommand: String, secrets: [String: String]) async -> Int32? {
     let start = Date()
-    let shell = "/bin/zsh"
-    var pid: pid_t = 0
 
-    var fileActions: posix_spawn_file_actions_t?
-    posix_spawn_file_actions_init(&fileActions)
-    posix_spawn_file_actions_adddup2(&fileActions, STDIN_FILENO, STDIN_FILENO)
-    posix_spawn_file_actions_adddup2(&fileActions, STDOUT_FILENO, STDOUT_FILENO)
-    posix_spawn_file_actions_adddup2(&fileActions, STDERR_FILENO, STDERR_FILENO)
-
-    let args: [UnsafeMutablePointer<CChar>?] = [
-        strdup(shell),
-        strdup("-c"),
-        strdup(command),
-        nil
-    ]
-    defer {
-        for arg in args { free(arg) }
-    }
-
-    let envp = makeSpawnEnvironment(secrets: secrets)
-    defer {
-        for entry in envp { free(entry) }
-    }
-
-    let result = posix_spawn(&pid, shell, &fileActions, nil, args, envp)
-    posix_spawn_file_actions_destroy(&fileActions)
+    let (result, pid) = spawnShellCommand(command, secrets: secrets)
 
     if result == 0 {
-        _ = await MainActor.run {
-            childPids.insert(pid)
-        }
+        registerChildPid(pid)
         print("Started [PID:\(pid)] \(displayCommand)...")
         fflush(stdout)
         var status: Int32 = 0
         let waited = waitpid(pid, &status, 0)
-        _ = await MainActor.run {
-            childPids.remove(pid)
-        }
+        unregisterChildPid(pid)
         printTimeTaken(fromStart: start, jobTitle: "[PID:\(pid)] \(displayCommand) ")
         fflush(stdout)
         guard waited == pid else {
