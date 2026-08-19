@@ -9,8 +9,13 @@ TEST_DIR=$(mktemp -d)
 PASS=0
 FAIL=0
 
+# Keep run history out of the real ~/.ez
+export EZCLI_HOME="$TEST_DIR/ez_home"
+
 cleanup() {
     rm -rf "$TEST_DIR"
+    # The keychain is not isolated by EZCLI_HOME, so the canary item is always cleaned up
+    security delete-generic-password -s com.urtti.ez -a EZ_ACCEPTANCE_TEST_CANARY > /dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -91,7 +96,8 @@ cd "$TEST_DIR"
 echo ""
 echo "## Version and Help"
 output=$(ez --version)
-assert_contains "$output" "v[0-9]\+\.[0-9]\+\.[0-9]\+" "--version outputs version"
+# Prefix-agnostic: release.sh writes whatever it is given into VERSION, with or without a leading v
+assert_contains "$output" "[0-9]\+\.[0-9]\+\.[0-9]\+" "--version outputs version"
 
 output=$(ez --help)
 assert_contains "$output" "Streamlines CLI command execution" "--help shows abstract"
@@ -150,6 +156,19 @@ assert_contains "$output" "protected keyword" "cannot add alias named 'add'"
 output=$(ez nonexistent 2>&1 || true)
 assert_contains "$output" "Unknown alias" "unknown alias shows error"
 
+# Shadowed aliases: a reserved-name alias (predating the keyword) warns on every keyword run.
+# ez add refuses these names, so seed the file directly, in its own directory.
+mkdir -p shadowdir
+cd shadowdir
+printf '{"aliases":{"stats":{"executionType":"sequential","commands":["echo hi"]}}}' > .ez_cli.json
+output=$(ez stats)
+assert_contains "$output" "shadowed by the built-in 'stats'" "reserved-name alias warns when its keyword runs"
+output=$(ez list)
+assert_equals "$(echo "$output" | grep -c "shadowed")" "0" "other keywords do not warn about it"
+output=$(ez remove stats && ez stats)
+assert_equals "$(echo "$output" | grep -c "shadowed")" "0" "removing the shadowed alias clears the warning"
+cd ..
+
 # Parallel execution
 echo ""
 echo "## Parallel Execution"
@@ -201,6 +220,18 @@ assert_contains "$output" "Expected 1 argument(s)" "missing args shows error"
 output=$(ez list)
 assert_contains "$output" "{1}" "list shows placeholder templates"
 
+# A gap in placeholder numbering ({1}+{4}) must demand 4 args, not stop counting at the gap
+ez add pgap 'echo a={1} d={4}'
+output=$(ez pgap 1 || true)
+assert_contains "$output" "Expected 4 argument(s)" "placeholder gap still counts highest index"
+
+output=$(ez pgap w x y z | grep '^a=')
+assert_equals "$output" "a=w d=z" "gapped placeholders substitute without re-appending used args"
+
+# One extra arg beyond the highest placeholder is appended exactly once
+output=$(ez pgap w x y z extra | grep '^a=')
+assert_equals "$output" "a=w d=z extra" "extra arg after gapped placeholders appended once"
+
 ## Extra Arguments Appended
 ez add noparams "echo static"
 output=$(ez noparams extraarg)
@@ -235,6 +266,14 @@ assert_contains "$output" "Must start with EZ_" "add-secret rejects key without 
 output=$(ez add-secret --key EZ_lower --value test 2>&1 || true)
 assert_contains "$output" "Must start with EZ_" "add-secret rejects lowercase key"
 
+# Without --value and with stdin closed/empty, add-secret must fail before touching the keychain
+output=$(ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY < /dev/null 2>&1 || true)
+assert_contains "$output" "No value provided on stdin" "add-secret without --value fails on empty stdin"
+assert_exit_code "add-secret with empty stdin exits 1" 1 ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY < /dev/null
+
+output=$(printf '\n' | ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY 2>&1 || true)
+assert_contains "$output" "must not be empty" "add-secret rejects an empty secret value"
+
 # Protected keywords for secrets
 echo ""
 echo "## Secret Protected Keywords"
@@ -248,6 +287,433 @@ assert_contains "$output" "protected keyword" "cannot add alias named 'remove-se
 output=$(ez --help)
 assert_contains "$output" "add-secret" "--help shows add-secret command"
 assert_contains "$output" "remove-secret" "--help shows remove-secret command"
+
+# Run history
+echo ""
+echo "## Run History"
+output=$(ez add stats "echo x" 2>&1 || true)
+assert_contains "$output" "protected keyword" "cannot add alias named 'stats'"
+
+output=$(ez --help)
+assert_contains "$output" "stats" "--help shows stats command"
+
+output=$(ez stats nohistory)
+assert_contains "$output" "No run history" "stats shows friendly empty state"
+
+ez add statsrun "echo counted" > /dev/null
+ez statsrun > /dev/null
+ez statsrun > /dev/null
+output=$(ez stats statsrun)
+assert_contains "$output" "Recent runs" "stats shows recent runs header"
+assert_equals "$(echo "$output" | grep -c "ok")" "2" "stats lists both runs"
+
+ez add statsfail "exit 3" > /dev/null
+ez statsfail > /dev/null 2>&1 || true
+output=$(ez stats statsfail)
+assert_contains "$output" "exit 3" "stats records non-zero exit code"
+
+ez add statspar -p "echo a" "echo b" > /dev/null
+ez statspar > /dev/null
+output=$(ez stats statspar)
+assert_equals "$(echo "$output" | grep -c "ok")" "1" "parallel invocation records exactly one run"
+
+template=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs where alias_name = 'statspar'")
+assert_equals "$template" "echo a ;; echo b" "parallel alias records its commands without reading as a pipeline"
+
+# The recorded code is the first failure in command order, not the first job to finish
+ez add statsparfail -p "sleep 0.2; exit 3" "exit 4" > /dev/null
+ez statsparfail > /dev/null 2>&1 || true
+code=$(sqlite3 "$EZCLI_HOME/runs.db" "select exit_code from runs where alias_name = 'statsparfail'")
+assert_equals "$code" "3" "parallel exit code is the first failing command, not the first to finish"
+
+if [ -f "$EZCLI_HOME/runs.db" ]; then
+    echo "✓ run history database lives under EZCLI_HOME"
+    ((++PASS))
+else
+    echo "✗ run history database lives under EZCLI_HOME"
+    ((++FAIL))
+fi
+
+templates=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs where alias_name = 'statsrun'")
+assert_equals "$templates" "echo counted
+echo counted" "database stores the alias definition per invocation"
+
+cwds=$(sqlite3 "$EZCLI_HOME/runs.db" "select distinct cwd from runs")
+assert_equals "$cwds" "$(pwd -P)" "runs are scoped to the directory they ran in"
+
+# Run history never persists resolved values
+echo ""
+echo "## Run History Secret Safety"
+# A key that no real keychain holds, so this never reads the developer's own secrets
+ez add statssecret 'echo token={EZ_ACCEPTANCE_TEST_ABSENT_KEY}' > /dev/null
+output=$(ez statssecret 2>&1 || true)
+assert_contains "$output" "Failed to read secret" "alias with unavailable secret aborts"
+output=$(ez stats statssecret)
+assert_contains "$output" "No run history" "aborted secret alias records no run"
+
+# Positive check: a secret alias that actually runs must record the placeholder, not the value.
+# Needs a real keychain item, so it is skipped when the keychain is unavailable.
+CANARY_VALUE="leakcanary987"
+if ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force > /dev/null 2>&1; then
+    # --value still works but is deprecated; the warning must land on stderr
+    warn_output=$(ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force 2>&1)
+    assert_contains "$warn_output" "shell history" "--value prints a deprecation warning"
+    # the ez() wrapper merges 2>&1, so call the binary directly to separate the streams
+    warn_stdout=$("$EZ_BIN" add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force 2>/dev/null)
+    if echo "$warn_stdout" | grep -q "shell history"; then
+        echo "✗ deprecation warning goes to stderr, not stdout"
+        ((++FAIL))
+    else
+        echo "✓ deprecation warning goes to stderr, not stdout"
+        ((++PASS))
+    fi
+
+    # Piping the value on stdin is the supported replacement — round-trip it
+    STDIN_VALUE="stdincanary654"
+    printf '%s\n' "$STDIN_VALUE" | ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --force > /dev/null
+    ez add stdinsecret 'echo got:{EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    stdin_line=$(ez stdinsecret | grep '^got:' || true)
+    assert_equals "$stdin_line" "got:$STDIN_VALUE" "secret piped on stdin round-trips through an alias"
+
+    ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force > /dev/null 2>&1
+    ez add statscanary 'echo token={EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    ez statscanary > /dev/null 2>&1
+    template=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs where alias_name = 'statscanary'")
+    assert_equals "$template" "echo token={EZ_ACCEPTANCE_TEST_CANARY}" "executed secret alias records the placeholder form"
+    if grep -q "$CANARY_VALUE" "$EZCLI_HOME"/runs.db* 2>/dev/null; then
+        echo "✗ database bytes never hold a resolved secret"
+        ((++FAIL))
+    else
+        echo "✓ database bytes never hold a resolved secret"
+        ((++PASS))
+    fi
+
+    # Parallel mode prints the pre-substitution text, so secrets stay out of the terminal
+    ez add statscanarypar -p 'echo token={EZ_ACCEPTANCE_TEST_CANARY} > /dev/null' "echo b > /dev/null" > /dev/null
+    canary_output=$(ez statscanarypar 2>&1 || true)
+    if echo "$canary_output" | grep -q "$CANARY_VALUE"; then
+        echo "✗ parallel output never prints a resolved secret"
+        ((++FAIL))
+    else
+        echo "✓ parallel output never prints a resolved secret"
+        ((++PASS))
+    fi
+
+    # Secrets travel via the child's environment, never argv, so the resolved value must
+    # not be visible in `ps`. A sleeping child keeps its argv sampleable long enough.
+    ez add pscanary 'sleep 2 && echo token={EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    ez pscanary > /dev/null 2>&1 &
+    PSCANARY_PID=$!
+    sleep 1
+    if ps -ww -ax -o command 2>/dev/null | grep -v grep | grep -q "$CANARY_VALUE"; then
+        echo "✗ resolved secret never appears in process argv (ps)"
+        ((++FAIL))
+    else
+        echo "✓ resolved secret never appears in process argv (ps)"
+        ((++PASS))
+    fi
+    wait $PSCANARY_PID || true
+
+    # The same env-passing path in parallel mode
+    ez add pscanarypar -p 'sleep 2 && echo token={EZ_ACCEPTANCE_TEST_CANARY} > /dev/null' 'sleep 2' > /dev/null
+    ez pscanarypar > /dev/null 2>&1 &
+    PSCANARY_PID=$!
+    sleep 1
+    if ps -ww -ax -o command 2>/dev/null | grep -v grep | grep -q "$CANARY_VALUE"; then
+        echo "✗ resolved secret never appears in parallel process argv (ps)"
+        ((++FAIL))
+    else
+        echo "✓ resolved secret never appears in parallel process argv (ps)"
+        ((++PASS))
+    fi
+    wait $PSCANARY_PID || true
+
+    # A secret full of shell-hostile characters must survive the "$EZ_FOO" expansion intact
+    TRICKY_VALUE='sp ace "dq" $dollar '\''sq'\'' *glob'
+    ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$TRICKY_VALUE" --force > /dev/null
+    ez add trickysecret 'echo "got:{EZ_ACCEPTANCE_TEST_CANARY}"' > /dev/null
+    tricky_line=$(ez trickysecret | grep '^got:' || true)
+    assert_equals "$tricky_line" "got:$TRICKY_VALUE" "secret with spaces/quotes/\$ arrives intact"
+
+    ez add trickybare 'echo got:{EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    tricky_line=$(ez trickybare | grep '^got:' || true)
+    assert_equals "$tricky_line" "got:$TRICKY_VALUE" "unquoted secret placeholder arrives intact"
+
+    ez remove-secret EZ_ACCEPTANCE_TEST_CANARY > /dev/null 2>&1 || true
+else
+    echo "⚠ skipped keychain canary tests (keychain unavailable)"
+fi
+
+ez add statsparam 'echo value={1}' > /dev/null
+ez statsparam supersecretvalue123 > /dev/null
+dump=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs")
+assert_contains "$dump" "{1}" "database stores the literal {1} placeholder"
+if echo "$dump" | grep -q "supersecretvalue123"; then
+    echo "✗ database does not store substituted values"
+    ((++FAIL))
+else
+    echo "✓ database does not store substituted values"
+    ((++PASS))
+fi
+
+# Summary and trend
+echo ""
+echo "## Run Summary and Trend"
+
+seed_run() {
+    # alias, duration_ms, started_at, exit_code (default 0)
+    sqlite3 "$EZCLI_HOME/runs.db" "insert into runs (cwd, alias_name, command_template, execution_type, exit_code, duration_ms, started_at) values ('$(pwd -P)', '$1', 'seeded', 'sequential', ${4:-0}, $2, $3)"
+}
+
+# Even sample count: median is the mean of the two middle values
+for pair in "100 2000" "200 2001" "300 2002" "400 2003"; do
+    seed_run seededeven ${pair% *} ${pair#* }
+done
+output=$(ez stats seededeven)
+assert_contains "$output" "min 100 ms" "summary reports min"
+assert_contains "$output" "median 250 ms" "median of an even sample count averages the middle two"
+assert_contains "$output" "p90 400 ms" "summary reports p90"
+assert_contains "$output" "max 400 ms" "summary reports max"
+assert_contains "$output" "4 successful run(s)" "summary counts successful runs"
+
+# Failed runs are excluded from the statistics
+seed_run seededfail 100 2000
+seed_run seededfail 100 2001
+seed_run seededfail 100 2002
+seed_run seededfail 1 2003 3
+output=$(ez stats seededfail)
+assert_contains "$output" "median 100 ms" "failed run does not drag the median"
+assert_contains "$output" "3 successful run(s)" "failed run is not counted in the summary"
+
+# Trend: most recent 5 vs the previous 5, with an older row that must fall outside both windows
+seed_run seededtrend 5000 1999
+for at in 2000 2001 2002 2003 2004; do
+    seed_run seededtrend 100 $at
+done
+for at in 2005 2006 2007 2008 2009; do
+    seed_run seededtrend 200 $at
+done
+output=$(ez stats seededtrend)
+assert_contains "$output" "100% slower" "trend compares the recent window against the previous one"
+assert_contains "$output" "last 5 median 200 ms vs 100 ms before" "trend windows slice exactly 5 runs each"
+
+# Below the 15% threshold nothing is reported as a change
+for at in 2000 2001 2002 2003 2004; do
+    seed_run seededsteady 100 $at
+done
+for at in 2005 2006 2007 2008 2009; do
+    seed_run seededsteady 110 $at
+done
+output=$(ez stats seededsteady)
+assert_contains "$output" "steady" "a change under the threshold reports steady"
+
+# Fewer than 2N successful runs has no trend
+for at in 2000 2001 2002; do
+    seed_run seededshort 100 $at
+done
+output=$(ez stats seededshort)
+assert_contains "$output" "7 more successful runs needed to show perf trends" "insufficient history counts the missing runs"
+assert_contains "$output" "3 of 10 so far" "insufficient-history message states the requirement"
+
+# A zero-duration previous window is no baseline to compare against, not steadiness
+for at in 2000 2001 2002 2003 2004; do
+    seed_run seededzero 0 $at
+done
+for at in 2005 2006 2007 2008 2009; do
+    seed_run seededzero 800 $at
+done
+output=$(ez stats seededzero)
+assert_contains "$output" "no baseline" "a zero previous median declines to judge instead of reporting steady"
+
+# Real runs: a slow window after a fast one reads as slower
+ez add trendy "sleep 0.02" > /dev/null
+for i in 1 2 3 4 5; do ez trendy > /dev/null; done
+output=$(ez stats trendy)
+assert_contains "$output" "5 more successful runs needed" "five real runs are not enough for a trend"
+ez add trendy "sleep 0.3" > /dev/null
+for i in 1 2 3 4 5; do ez trendy > /dev/null; done
+output=$(ez stats trendy)
+assert_equals "$(sqlite3 "$EZCLI_HOME/runs.db" "select count(*) from runs where alias_name = 'trendy' and duration_ms > 0")" "10" "real runs record a non-zero duration"
+assert_contains "$output" "slower" "slower real runs read as slower"
+
+# ...and the reverse
+ez add trendyfast "sleep 0.3" > /dev/null
+for i in 1 2 3 4 5; do ez trendyfast > /dev/null; done
+ez add trendyfast "sleep 0.02" > /dev/null
+for i in 1 2 3 4 5; do ez trendyfast > /dev/null; done
+output=$(ez stats trendyfast)
+assert_contains "$output" "faster" "faster real runs read as faster"
+
+# Bare 'ez stats' overview
+output=$(ez stats)
+assert_contains "$output" "Run history" "bare stats shows the overview header"
+assert_contains "$output" "alias  *success rate  *median duration  *duration trend" "bare stats shows column headers"
+assert_contains "$output" "ez seededtrend" "bare stats lists aliases with history"
+assert_contains "$output" "250 ms" "bare stats shows a median per alias"
+assert_contains "$output" "10 of 10" "bare stats counts successful runs against every run"
+assert_contains "$output" "3 of 4" "bare stats shows failed runs in the same denominator"
+assert_contains "$output" "↑" "bare stats shows a trend arrow"
+assert_contains "$output" "needs 7 more runs" "bare stats counts the runs missing for a trend"
+assert_contains "$output" "none successful" "bare stats flags aliases without successful runs"
+
+mkdir -p "$TEST_DIR/other"
+output=$(cd "$TEST_DIR/other" && "$EZ_BIN" stats 2>&1)
+assert_contains "$output" "No run history in this directory" "overview is scoped to the current directory"
+
+# A run says something about itself only when it is worth saying
+echo ""
+echo "## Per-run Outlier Notes"
+
+# Baseline seeded at 600 ms so the real runs below only have to differ, not repeat
+seed_baseline() {
+    # alias, duration_ms
+    for i in 1 2 3 4 5 6; do
+        seed_run "$1" "$2" $((3000 + i))
+    done
+}
+
+seed_baseline noteslow 600
+ez add noteslow 'sleep 1.1' > /dev/null
+output=$(ez noteslow)
+assert_contains "$output" "slower than median 600 ms" "a slow run is called out against its baseline"
+
+seed_baseline notefast 6000
+ez add notefast 'sleep 0.6' > /dev/null
+output=$(ez notefast)
+assert_contains "$output" "faster than median 6.000 s" "a run that got much faster is called out too"
+
+seed_baseline notesteady 600
+ez add notesteady 'sleep 0.62' > /dev/null
+output=$(ez notesteady)
+if echo "$output" | grep -q "than median"; then
+    echo "✗ a run within the threshold stays quiet"
+    ((++FAIL))
+else
+    echo "✓ a run within the threshold stays quiet"
+    ((++PASS))
+fi
+
+# A trivially fast alias is never annotated, however far off its baseline it lands
+seed_baseline notetrivial 2
+ez add notetrivial 'echo x' > /dev/null
+output=$(ez notetrivial)
+if echo "$output" | grep -q "than median"; then
+    echo "✗ a trivially fast alias is never annotated"
+    ((++FAIL))
+else
+    echo "✓ a trivially fast alias is never annotated"
+    ((++PASS))
+fi
+
+# A failed run is not compared against a successful-run baseline
+seed_baseline notefail 600
+ez add notefail 'sleep 1.1; exit 1' > /dev/null
+output=$(ez notefail 2>&1 || true)
+if echo "$output" | grep -q "than median"; then
+    echo "✗ a failed run is never compared against the baseline"
+    ((++FAIL))
+else
+    echo "✓ a failed run is never compared against the baseline"
+    ((++PASS))
+fi
+
+# Too few prior runs means no trustworthy baseline
+seed_run notethin 600 3001
+seed_run notethin 600 3002
+ez add notethin 'sleep 1.1' > /dev/null
+output=$(ez notethin)
+if echo "$output" | grep -q "than median"; then
+    echo "✗ too few prior runs produces no note"
+    ((++FAIL))
+else
+    echo "✓ too few prior runs produces no note"
+    ((++PASS))
+fi
+
+# ez exits with the code of the work it drove, so `ez test && deploy` behaves
+echo ""
+echo "## Exit Codes"
+ez add exitok 'exit 0' > /dev/null
+assert_exit_code "successful alias exits 0" 0 ez exitok
+
+ez add exitboom 'exit 3' > /dev/null
+assert_exit_code "failing alias propagates its exit code" 3 ez exitboom
+
+ez add exitsig 'kill -TERM $$' > /dev/null
+assert_exit_code "signal-killed alias exits 128 + signal" 143 ez exitsig
+
+ez add exitpar -p 'exit 0' 'exit 7' > /dev/null
+assert_exit_code "parallel alias reports the first non-zero code" 7 ez exitpar
+
+ez add exitparok -p 'exit 0' 'exit 0' > /dev/null
+assert_exit_code "all-successful parallel alias exits 0" 0 ez exitparok
+
+# The recorded exit code and the process exit code must agree
+ez exitboom > /dev/null 2>&1 || true
+recorded=$(sqlite3 "$EZCLI_HOME/runs.db" "select exit_code from runs where alias_name = 'exitboom' limit 1")
+assert_equals "$recorded" "3" "recorded exit code matches the process exit code"
+
+assert_exit_code "unknown alias exits 1" 1 ez no-such-alias-exists
+
+ez add exitargs 'echo hello {1}' > /dev/null
+assert_exit_code "missing arguments exits 1" 1 ez exitargs
+
+ez add exitsecret 'echo {EZ_ACCEPTANCE_TEST_MISSING_CANARY}' > /dev/null
+assert_exit_code "unreadable secret exits 1" 1 ez exitsecret
+
+# Machine and boot context recorded with every run (schema v2)
+echo ""
+echo "## Machine Context"
+
+ez add ctxrun "echo ctx" > /dev/null
+ez ctxrun > /dev/null
+ez ctxrun > /dev/null
+
+missing=$(sqlite3 "$EZCLI_HOME/runs.db" "select count(*) from runs where alias_name = 'ctxrun' and (machine_id is null or hw_model is null or cpu_brand is null or perf_cores is null or efficiency_cores is null or memory_bytes is null or os_version is null or runs_since_boot is null)")
+assert_equals "$missing" "0" "every run records the full machine context"
+
+distinct_ids=$(sqlite3 "$EZCLI_HOME/runs.db" "select count(distinct machine_id) from runs where machine_id is not null")
+assert_equals "$distinct_ids" "1" "machine id is stable across runs"
+
+stored_id=$(cat "$EZCLI_HOME/machine_id")
+recorded_id=$(sqlite3 "$EZCLI_HOME/runs.db" "select distinct machine_id from runs where machine_id is not null")
+assert_equals "$recorded_id" "$stored_id" "recorded machine id matches the persisted machine_id file"
+
+first_count=$(sqlite3 "$EZCLI_HOME/runs.db" "select runs_since_boot from runs where alias_name = 'ctxrun' order by id limit 1")
+second_count=$(sqlite3 "$EZCLI_HOME/runs.db" "select runs_since_boot from runs where alias_name = 'ctxrun' order by id desc limit 1")
+if [ "$second_count" -gt "$first_count" ]; then
+    echo "✓ runs-since-boot counter increments across runs"
+    ((++PASS))
+else
+    echo "✗ runs-since-boot counter increments across runs ($first_count -> $second_count)"
+    ((++FAIL))
+fi
+
+output=$(ez stats ctxrun -v)
+assert_contains "$output" "Machine" "stats -v shows the machine block"
+assert_contains "$output" "since boot" "stats -v shows runs since boot per row"
+assert_contains "$output" "machine id $stored_id" "stats -v shows the machine id"
+
+output=$(ez stats ctxrun)
+if echo "$output" | grep -q "since boot\|machine id"; then
+    echo "✗ default stats output stays free of machine context"
+    ((++FAIL))
+else
+    echo "✓ default stats output stays free of machine context"
+    ((++PASS))
+fi
+
+# Rows written before schema v2 carry no context; stats -v must tolerate them
+seed_run ctxlegacy 100 2000
+output=$(ez stats ctxlegacy -v)
+assert_contains "$output" "Recent runs" "stats -v tolerates rows without context"
+if echo "$output" | grep -q "Machine (as recorded"; then
+    echo "✗ stats -v omits the machine block when no row has context"
+    ((++FAIL))
+else
+    echo "✓ stats -v omits the machine block when no row has context"
+    ((++PASS))
+fi
 
 # Summary
 echo ""

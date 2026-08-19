@@ -1,7 +1,8 @@
 import ArgumentParser
 import Foundation
 
-private let PROTECTED_KEYWORDS = ["add", "remove", "list", "add-secret", "remove-secret"]
+// Shared with ez.swift's router, which warns when a stored alias is shadowed by one of these
+let PROTECTED_KEYWORDS = ["add", "remove", "list", "stats", "add-secret", "remove-secret"]
 
 struct Add: ParsableCommand {
     static let configuration = CommandConfiguration(

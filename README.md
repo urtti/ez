@@ -8,13 +8,13 @@ A macOS CLI tool for project-specific command aliases. Define commands locally w
 
 - **Project-scoped storage** - Aliases live in `.ez_cli.json` files at the directory level, keeping commands tethered to their respective projects
 - **Safety through locality** - No global aliases means no accidental damage in a different directory
-- **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands
-- **Fast** - Built in Swift with zero third-party dependencies and instant startup times
-- **Secrets management** - Store API keys and tokens in Apple Keychain, reference them in aliases without exposing values in terminal output
-- **Private** - Entirely offline with no telemetry or cloud connectivity
+- **Team collaboration** - Commit the config file to version control so new team members get immediate access to established commands. As with a `Makefile` or `npm run`, running an alias from a cloned repo runs whatever commands that repo's authors defined — review `.ez_cli.json` before running aliases from sources you don't trust
+- **Fast** - Built in Swift with instant startup times and no third-party dependencies — the only package used is Apple's own swift-argument-parser
+- **Secrets management** - Store API keys and tokens in Apple Keychain, reference them in aliases without exposing values in terminal output or the process table
+- **Private** - Makes no network calls; run history is recorded locally in `~/.ez/runs.db` and never leaves your machine
 - **Interactive support** - Full terminal passthrough for interactive applications like vim and ssh
 - **Shell integration** - zsh tab completion for command discovery
-- **Built-in analytics** - Automatic runtime tracking logs command execution duration
+- **Built-in analytics** - Local runtime tracking; `ez stats` shows per-alias duration history and trends
 
 ## Installation
 
@@ -61,10 +61,17 @@ ez greet world a b     # → echo hello world a b
 
 Store secrets in Apple Keychain and reference them in aliases:
 ```sh
-ez add-secret --key EZ_API_KEY --value sk-abc123
+ez add-secret --key EZ_API_KEY          # prompts for the value with typing hidden
 ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/deploy'
 ez deploy  # secret is injected at runtime, never shown in terminal output
 ```
+
+In scripts, pipe the value on stdin instead:
+```sh
+op read "op://vault/api/key" | ez add-secret --key EZ_API_KEY --force
+```
+
+(`--value` is also accepted but deprecated — it leaves the secret in shell history and `ps` — and will be removed in a future release.)
 
 Remove a secret:
 ```sh
@@ -84,6 +91,8 @@ ez -p lint test
 ## How It Works
 
 Aliases are stored in `.ez_cli.json` files within each directory. This keeps commands context-specific and prevents conflicts between projects. To clear all aliases in a directory, simply delete the `.ez_cli.json` file.
+
+Every alias run is also recorded in a local SQLite database at `~/.ez/runs.db` (override the location with `$EZCLI_HOME`): working directory, alias name, the command *template* — never substituted arguments or secret values — exit code, duration, and timestamp, plus machine context for reading the timing series later (hardware model, CPU, core counts, RAM, macOS version, a locally generated random machine ID stored at `~/.ez/machine_id`, and a runs-since-boot counter — nothing derived from your hostname or username). View it with `ez stats <alias> -v`. Nothing is ever sent anywhere; delete the files to clear all history.
 
 ## Requirements
 
@@ -105,45 +114,25 @@ swift run ez
 
 ### Testing
 
-Use the provided script to run tests with the correct flags:
+Run the acceptance test suite:
 
 ```sh
-./run-test.sh
+./acceptance-test.sh
 ```
 
-Or filter specific tests:
+The script builds the binary, runs it in an isolated temp directory, and asserts on output — nothing touches your real aliases, run history, or (aside from a dedicated canary key it cleans up) your Keychain.
+
+Interactive TTY features (vim, less, signal handling) can't be automated; verify those manually with:
 
 ```sh
-./run-test.sh --filter EzTests.testScopeGetURL
-```
-
-**Note:** Do not use `swift test` directly. The `UNIT_TEST` flag must be passed to prevent tests from interfering with your real configuration:
-
-```sh
-swift test -Xswiftc -DUNIT_TEST
-```
-
-### Code Coverage
-
-Generate a coverage report:
-
-```sh
-./run-test-coverage.sh
-```
-
-For a detailed HTML report:
-
-```sh
-llvm-cov show .build/debug/ezcliPackageTests.xctest/Contents/MacOS/ezcliPackageTests \
-  -instr-profile $(swift test --show-codecov-path | tail -n 1) \
-  -format=html -output-dir=coverage
+./acceptance-test-interactive.sh
 ```
 
 ### Project Structure
 
 - `ezcli/` - Source code
-- `test/` - Unit tests
-- `run-test.sh` - Script to run tests with the correct flags
+- `acceptance-test.sh` - Automated test suite
+- `acceptance-test-interactive.sh` - Manual tests for interactive/TTY features
 
 ### Build Requirements
 

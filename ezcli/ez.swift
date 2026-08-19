@@ -21,38 +21,16 @@ Manage alias storage:
     - Delete .ez_cli.json to clear local aliases.
 """,
         version: VERSION,
-        subcommands: [Add.self, Remove.self, List.self, AddSecret.self, RemoveSecret.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
+        subcommands: [Add.self, Remove.self, List.self, Stats.self, AddSecret.self, RemoveSecret.self, InstallCompletions.self, UninstallCompletions.self, ExecuteCommand.self]
     )
 
-    static func main() async throws {
-        // Setup signal handlers to forward signals to child processes
-        signal(SIGINT) { _ in
-            for pid in childPids {
-                kill(pid, SIGINT)
-            }
-        }
-
-        signal(SIGTERM) { _ in
-            for pid in childPids {
-                kill(pid, SIGTERM)
-            }
-        }
-
-        signal(SIGQUIT) { _ in
-            for pid in childPids {
-                kill(pid, SIGQUIT)
-            }
-        }
-
-        signal(SIGTSTP) { _ in
-            for pid in childPids {
-                kill(pid, SIGTSTP)
-            }
-        }
-
-        signal(SIGCONT) { _ in
-            for pid in childPids {
-                kill(pid, SIGCONT)
+    static func main() async {
+        // Setup signal handlers to forward signals to child processes. The PID table must
+        // exist before any handler can fire — see initializeChildPidTable.
+        initializeChildPidTable()
+        for sig in [SIGINT, SIGTERM, SIGQUIT, SIGTSTP, SIGCONT] {
+            signal(sig) { received in
+                forwardSignalToChildren(received)
             }
         }
 
@@ -66,6 +44,12 @@ Manage alias storage:
         }
         arguments.removeFirst()
 
+        // An alias stored under a reserved name (e.g. created before that keyword shipped)
+        // can never run — the subcommand always wins. Say so instead of hiding it forever.
+        if PROTECTED_KEYWORDS.contains(command), AliasCollection(scope: Scope.local).alias(for: command) != nil {
+            fputs("🐘 Note: an alias named '\(command)' exists in this directory but is shadowed by the built-in '\(command)' command and can never run. Remove it with 'ez remove \(command)', or add it under a different name.\n", stderr)
+        }
+
         switch command {
         case "list":
             List.main(arguments)
@@ -73,6 +57,8 @@ Manage alias storage:
             Add.main(arguments)
         case "remove":
             Remove.main(arguments)
+        case "stats":
+            await Stats.main(arguments)
         case "add-secret":
             AddSecret.main(arguments)
         case "remove-secret":
@@ -90,6 +76,8 @@ Manage alias storage:
                 exit(withError: CleanExit.helpRequest(Remove.self))
             case "list":
                 exit(withError: CleanExit.helpRequest(List.self))
+            case "stats":
+                exit(withError: CleanExit.helpRequest(Stats.self))
             case "add-secret":
                 exit(withError: CleanExit.helpRequest(AddSecret.self))
             case "remove-secret":
@@ -109,38 +97,46 @@ Manage alias storage:
         default:
             guard let alias = AliasCollection(scope: Scope.local).alias(for: command) else {
                 printError("🐘 Unknown alias: \(command.format(bold: true, color: .blue)).")
-                exit(withError: nil)
+                Foundation.exit(1)
             }
 
             let expectedArgs = alias.maxPlaceholderIndex
             if expectedArgs > 0 && arguments.count < expectedArgs {
                 let placeholders = (1...expectedArgs).map { "<arg\($0)>" }.joined(separator: " ")
                 printError("🐘 Expected \(expectedArgs) argument(s): ez \(command) \(placeholders)")
-                exit(withError: nil)
+                Foundation.exit(1)
             }
 
-            var resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: arguments) : alias
+            // First expectedArgs fill placeholders; the rest are appended, so no argument is used twice
+            var resolvedAlias = expectedArgs > 0 ? alias.substituting(arguments: Array(arguments.prefix(expectedArgs))) : alias
             let extraArgs = Array(arguments.dropFirst(expectedArgs))
             resolvedAlias = resolvedAlias.appending(extraArguments: extraArgs)
 
             print("🐘 Executing: \(resolvedAlias.commandsDescription)".format(bold: true, color: .green))
 
-            // Resolve secrets from keychain (after printing, so secrets never appear in output)
+            // Resolve secrets from keychain (after printing, so secrets never appear in output).
+            // Values go to the child via its environment, never argv, so they stay out of `ps`.
+            let displayCommands = resolvedAlias.commands
             let keys = resolvedAlias.secretKeys
+            var secrets: [String: String] = [:]
             if !keys.isEmpty {
-                var secrets: [String: String] = [:]
                 for key in keys {
                     do {
                         secrets[key] = try KeychainManager.readSecret(key: key)
                     } catch let error as KeychainError {
                         printError("Failed to read secret '\(key)': \(error.message)")
-                        exit(withError: nil)
+                        Foundation.exit(1)
+                    } catch {
+                        printError("Failed to read secret '\(key)': \(error)")
+                        Foundation.exit(1)
                     }
                 }
-                resolvedAlias = resolvedAlias.substitutingSecrets(secrets)
+                resolvedAlias = resolvedAlias.referencingSecretsFromEnvironment(keys)
             }
 
-            await resolvedAlias.execute()
+            let code = await resolvedAlias.execute(aliasName: command, commandTemplate: alias.commandTemplate, displayCommands: displayCommands, secrets: secrets)
+            // ez's exit status reflects the work it drove, so `ez test && deploy` behaves
+            Foundation.exit(code)
         }
     }
 

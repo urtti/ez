@@ -12,15 +12,20 @@ struct Alias: Codable {
         }
     }
 
+    // Recorded as the run history key; " ;; " keeps concurrent commands from reading as a shell pipeline
+    var commandTemplate: String {
+        return switch executionType {
+        case .sequential: commands.joined(separator: " ")
+        case .parallel: commands.joined(separator: " ;; ")
+        }
+    }
+
+    // Only counts placeholders substituting(arguments:) can fill: {1}–{99}, no leading zeros.
     var maxPlaceholderIndex: Int {
         var maxIndex = 0
         for command in commands {
-            for i in 1...99 {
-                if command.contains("{\(i)}") {
-                    maxIndex = max(maxIndex, i)
-                } else if i > maxIndex + 1 {
-                    break
-                }
+            for match in command.matches(of: /\{([1-9][0-9]?)\}/) {
+                maxIndex = max(maxIndex, Int(match.1) ?? 0)
             }
         }
         return maxIndex
@@ -61,11 +66,14 @@ struct Alias: Codable {
         return keys
     }
 
-    func substitutingSecrets(_ secrets: [String: String]) -> Alias {
+    // Secrets travel to the child in its environment, never argv, so resolved values stay
+    // out of the process table (`ps`). Each {EZ_FOO} becomes "$EZ_FOO" — double-quoted, so
+    // zsh expands it without word-splitting or globbing mangling the value.
+    func referencingSecretsFromEnvironment(_ keys: Set<String>) -> Alias {
         let substitutedCommands = commands.map { command in
             var result = command
-            for (key, value) in secrets {
-                result = result.replacingOccurrences(of: "{\(key)}", with: value)
+            for key in keys {
+                result = result.replacingOccurrences(of: "{\(key)}", with: "\"$\(key)\"")
             }
             return result
         }
@@ -82,12 +90,16 @@ struct Alias: Codable {
         return Alias(executionType: executionType, commands: newCommands, description: description)
     }
 
-    func execute() async {
+    // commandTemplate is the pre-substitution definition, so secrets are never recorded;
+    // displayCommands are pre-secret too, so resolved secrets never reach the terminal.
+    // secrets are exported into the child's environment, keeping values out of argv.
+    // Returns the exit code ez itself should exit with, so `ez test && deploy` behaves.
+    func execute(aliasName: String, commandTemplate: String, displayCommands: [String], secrets: [String: String]) async -> Int32 {
         switch executionType {
         case .sequential:
-            await runCommands(commands.joined(separator: " "))
+            return await runCommands(commands.joined(separator: " "), aliasName: aliasName, commandTemplate: commandTemplate, secrets: secrets)
         case .parallel:
-            await runParallelCommands(commands)
+            return await runParallelCommands(commands, displayCommands: displayCommands, aliasName: aliasName, commandTemplate: commandTemplate, secrets: secrets)
         }
     }
 }
@@ -102,11 +114,4 @@ private func shellEscape(_ arg: String) -> String {
 enum ExecutionType: String, Codable {
     case sequential
     case parallel
-
-    var color: FontColor {
-        return switch self {
-        case .sequential: .blue
-        case .parallel: .blue
-        }
-    }
 }
