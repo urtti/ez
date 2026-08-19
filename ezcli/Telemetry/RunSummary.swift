@@ -122,7 +122,8 @@ enum RunTrend: Sendable {
 
     var label: String {
         return switch self {
-        case .insufficientData: "not enough data"
+        case .insufficientData(let available, let needed):
+            "needs \(needed - available) more run\(needed - available == 1 ? "" : "s")"
         case .noBaseline: "no baseline"
         case .steady: "steady"
         case .slower(let percent, _, _): "\(percent)% slower"
@@ -133,7 +134,8 @@ enum RunTrend: Sendable {
     var sentence: String {
         switch self {
         case .insufficientData(let available, let needed):
-            return "not enough data — \(needed) successful runs needed for a trend, \(available) so far"
+            let remaining = needed - available
+            return "\(remaining) more successful run\(remaining == 1 ? "" : "s") needed to show perf trends — \(available) of \(needed) so far"
         case .noBaseline(let recent):
             return "no baseline — the previous \(TREND_WINDOW) runs median 0 ms, nothing to compare last \(TREND_WINDOW) median \(formatDuration(milliseconds: recent)) against"
         case .steady(let recent, let previous):

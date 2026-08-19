@@ -89,20 +89,48 @@ struct Stats: AsyncParsableCommand {
             return
         }
 
-        let maxLengthAliasName = names.max(by: { $0.count < $1.count })?.count ?? 0
-        print("🐘 Run history".formatBold())
+        // Gather plain text first: columns must be padded before colour codes wrap them,
+        // and the widths depend on every row
+        var rows: [(alias: String, runs: String, median: String, trend: String, trendColor: FontColor, allFailed: Bool)] = []
         for aliasName in names {
-            // Pad the name with spaces for nice formatting
-            let paddingCount = max(0, maxLengthAliasName - aliasName.count)
-            let label = "ez \(aliasName) " + String(repeating: " ", count: paddingCount)
-            // Both branches count over every run, so the two lines share a denominator
+            // Both branches count over every run, so all rows share a denominator
             let total = await RunStore.shared.runCount(cwd: cwd, alias: aliasName)
-            guard let summary = await RunStore.shared.summary(cwd: cwd, alias: aliasName) else {
-                print("\(label.format(bold: true, color: .blue)) \("\(total) run(s), none successful".format(bold: true, color: .red))")
-                continue
+            if let summary = await RunStore.shared.summary(cwd: cwd, alias: aliasName) {
+                rows.append((
+                    alias: "ez \(aliasName)",
+                    runs: "\(summary.count) of \(total)",
+                    median: formatDuration(milliseconds: summary.medianMs),
+                    trend: "\(summary.trend.arrow) \(summary.trend.label)",
+                    trendColor: summary.trend.color,
+                    allFailed: false
+                ))
+            } else {
+                rows.append((
+                    alias: "ez \(aliasName)",
+                    runs: "0 of \(total)",
+                    median: "—",
+                    trend: "none successful",
+                    trendColor: .red,
+                    allFailed: true
+                ))
             }
-            let counted = "\(summary.count) of \(total) run(s) ok  median \(formatDuration(milliseconds: summary.medianMs))"
-            print("\(label.format(bold: true, color: .blue)) \(counted.format(bold: true, color: .green))  \(summary.trend.arrow) \(summary.trend.label.format(bold: true, color: summary.trend.color))")
+        }
+
+        let aliasWidth = max("alias".count, rows.map { $0.alias.count }.max() ?? 0)
+        let runsWidth = max("success rate".count, rows.map { $0.runs.count }.max() ?? 0)
+        let medianWidth = max("median duration".count, rows.map { $0.median.count }.max() ?? 0)
+
+        func padded(_ text: String, to width: Int) -> String {
+            text + String(repeating: " ", count: max(0, width - text.count))
+        }
+
+        print("🐘 Run history".formatBold())
+        print("\(padded("alias", to: aliasWidth))  \(padded("success rate", to: runsWidth))  \(padded("median duration", to: medianWidth))  duration trend")
+        for row in rows {
+            let alias = padded(row.alias, to: aliasWidth).format(bold: true, color: .blue)
+            let runs = padded(row.runs, to: runsWidth).format(bold: true, color: row.allFailed ? .red : .green)
+            let median = padded(row.median, to: medianWidth).format(bold: true, color: row.allFailed ? .red : .green)
+            print("\(alias)  \(runs)  \(median)  \(row.trend.format(bold: true, color: row.trendColor))")
         }
     }
 }

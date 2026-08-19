@@ -161,7 +161,7 @@ ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/dep
 
 ## Run History
 
-Every alias execution records one row in a local SQLite database — `$EZCLI_HOME/runs.db` if set, otherwise `~/.ez/runs.db`. `ez stats <alias>` prints the last 20 runs plus a summary block for the current directory; bare `ez stats` lists every alias with history there, laid out like `ez list`.
+Every alias execution records one row in a local SQLite database — `$EZCLI_HOME/runs.db` if set, otherwise `~/.ez/runs.db`. `ez stats <alias>` prints the last 20 runs plus a summary block for the current directory; bare `ez stats` lists every alias with history there as an aligned table with column headers (alias, success rate, median duration, duration trend).
 
 - `Telemetry/TelemetryPaths.swift` resolves the root; `acceptance-test.sh` exports `EZCLI_HOME` to a per-run temp dir so tests never touch real history.
 - `Telemetry/RunStore.swift` is the only file using the sqlite3 C API — an actor owning one connection, with WAL + `busy_timeout=2000` for concurrent `ez` processes, and migrations gated on `PRAGMA user_version`. Writes that fail are reported via `printError` and swallowed; telemetry must never fail the user's command.
@@ -172,7 +172,7 @@ Every alias execution records one row in a local SQLite database — `$EZCLI_HOM
 - Parallel mode prints the pre-secret `displayCommands`, so resolved secrets never reach the terminal either.
 - Recency ordering uses `id`, not `started_at`, so insertion order survives a backward clock step.
 - `Telemetry/RunSummary.swift` computes count/min/median/p90/max and the trend over `exit_code = 0` rows only, so a failed or interrupted fast run never drags the median. Median averages the middle two on an even sample count; p90 is nearest-rank.
-- Trend is the median of the most recent 5 successful runs against the previous 5. Fewer than 10 prints "not enough data"; a change under 15% reads as "steady", so it doesn't cry wolf; a zero previous median prints "no baseline" rather than claiming steadiness.
+- Trend is the median of the most recent 5 successful runs against the previous 5. Fewer than 10 prints "needs N more runs" (overview) / "N more successful runs needed to show perf trends" (per-alias); a change under 15% reads as "steady", so it doesn't cry wolf; a zero previous median prints "no baseline" rather than claiming steadiness.
 - **Per-run outlier notes** (`RunOutlier` in `RunSummary.swift`): a finished run appends `↑ 63% slower than median 9.1 s` to its timing line, but *only* when it is worth saying — normal output is untouched otherwise. Requires ≥5 prior successful runs, the run to have succeeded, and the change to exceed the same 15% threshold. The baseline is read **before** the run is recorded so it never pollutes its own comparison. The `OUTLIER_MIN_MS` (500 ms) gate tests `max(thisRun, baseline)`, not the run alone — otherwise an alias that drops from 10 s to 0.2 s would be silenced for becoming fast, which is exactly the speedup worth reporting. Parallel aliases print a `total` line only when there is a note, since sub-jobs already print their own timings.
 - Outlier notes catch **outliers**; `ez stats` catches **drift**. A rolling median moves with slow drift, so a run creeping up over weeks never trips the per-run note — the two are complementary.
 

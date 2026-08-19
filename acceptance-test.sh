@@ -512,8 +512,8 @@ for at in 2000 2001 2002; do
     seed_run seededshort 100 $at
 done
 output=$(ez stats seededshort)
-assert_contains "$output" "not enough data" "insufficient history prints the not-enough-data message"
-assert_contains "$output" "10 successful runs needed" "not-enough-data message states the requirement"
+assert_contains "$output" "7 more successful runs needed to show perf trends" "insufficient history counts the missing runs"
+assert_contains "$output" "3 of 10 so far" "insufficient-history message states the requirement"
 
 # A zero-duration previous window is no baseline to compare against, not steadiness
 for at in 2000 2001 2002 2003 2004; do
@@ -529,7 +529,7 @@ assert_contains "$output" "no baseline" "a zero previous median declines to judg
 ez add trendy "sleep 0.02" > /dev/null
 for i in 1 2 3 4 5; do ez trendy > /dev/null; done
 output=$(ez stats trendy)
-assert_contains "$output" "not enough data" "five real runs are not enough for a trend"
+assert_contains "$output" "5 more successful runs needed" "five real runs are not enough for a trend"
 ez add trendy "sleep 0.3" > /dev/null
 for i in 1 2 3 4 5; do ez trendy > /dev/null; done
 output=$(ez stats trendy)
@@ -547,11 +547,13 @@ assert_contains "$output" "faster" "faster real runs read as faster"
 # Bare 'ez stats' overview
 output=$(ez stats)
 assert_contains "$output" "Run history" "bare stats shows the overview header"
+assert_contains "$output" "alias  *success rate  *median duration  *duration trend" "bare stats shows column headers"
 assert_contains "$output" "ez seededtrend" "bare stats lists aliases with history"
-assert_contains "$output" "median 250 ms" "bare stats shows a median per alias"
-assert_contains "$output" "10 of 10 run(s) ok" "bare stats counts successful runs against every run"
-assert_contains "$output" "3 of 4 run(s) ok" "bare stats shows failed runs in the same denominator"
+assert_contains "$output" "250 ms" "bare stats shows a median per alias"
+assert_contains "$output" "10 of 10" "bare stats counts successful runs against every run"
+assert_contains "$output" "3 of 4" "bare stats shows failed runs in the same denominator"
 assert_contains "$output" "↑" "bare stats shows a trend arrow"
+assert_contains "$output" "needs 7 more runs" "bare stats counts the runs missing for a trend"
 assert_contains "$output" "none successful" "bare stats flags aliases without successful runs"
 
 mkdir -p "$TEST_DIR/other"
