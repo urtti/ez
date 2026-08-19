@@ -137,15 +137,16 @@ ez greet world foo bar  # → echo hello world foo bar
 Aliases can reference secrets stored in Apple Keychain using `{EZ_*}` placeholders:
 
 ```bash
-# Store a secret
-ez add-secret --key EZ_API_KEY --value sk-abc123
+# Store a secret (hidden prompt on a TTY; pipe on stdin in scripts)
+ez add-secret --key EZ_API_KEY
+echo "$SECRET" | ez add-secret --key EZ_API_KEY --force
 
 # Use it in an alias
 ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/deploy'
 ```
 
 **How it works:**
-- `ez add-secret --key EZ_KEY --value val` stores a secret in macOS Keychain (service: `com.urtti.ez`). Use `--force` to overwrite.
+- `ez add-secret --key EZ_KEY` stores a secret in macOS Keychain (service: `com.urtti.ez`). The value comes from a hidden `readpassphrase` prompt when stdin is a TTY, otherwise from the first line of stdin. `--value val` still works but prints a deprecation warning (it exposes the value to shell history and `ps`) and will be removed in a future release. Use `--force` to overwrite.
 - `ez remove-secret EZ_KEY` deletes a secret from Keychain.
 - At execution time, `Alias.secretKeys` scans commands for `{EZ_*}` patterns, then `ez.swift` reads each key from Keychain. Values are passed to the child **via its environment** (`posix_spawn` `envp`, built in `SystemActions.makeSpawnEnvironment`), and `Alias.referencingSecretsFromEnvironment(_:)` rewrites each `{EZ_FOO}` to `"$EZ_FOO"` — so resolved values never appear in the child's argv, keeping them out of `ps`. An inherited env var with the same name is dropped so the Keychain value wins.
 - Because `"$EZ_FOO"` doesn't expand inside single quotes, a placeholder single-quoted *within* the stored command stays literal. All documented examples put placeholders in double quotes, which work as before.
@@ -178,7 +179,7 @@ Alias names `add`, `remove`, `list`, `stats`, `add-secret`, and `remove-secret` 
 
 ## Release Process
 
-`./release.sh <version>` handles the full release: updates version in `ez.swift`, builds, creates GitHub release with tarball, and updates the homebrew tap at `../homebrew-ez`. The codesign identity is never hard-coded: the script reads `$EZ_CODESIGN_IDENTITY`, falling back to the `EZ_CODESIGN_IDENTITY` Keychain secret (`ez add-secret --key EZ_CODESIGN_IDENTITY --value "Apple Development: ..."`) — the same secret the `install-local` alias in `.ez_cli.json` uses.
+`./release.sh <version>` handles the full release: updates version in `ez.swift`, builds, creates GitHub release with tarball, and updates the homebrew tap at `../homebrew-ez`. The codesign identity is never hard-coded: the script reads `$EZ_CODESIGN_IDENTITY`, falling back to the `EZ_CODESIGN_IDENTITY` Keychain secret (`ez add-secret --key EZ_CODESIGN_IDENTITY`, then enter `Apple Development: ...` at the prompt) — the same secret the `install-local` alias in `.ez_cli.json` uses.
 
 Version is stored as `private let VERSION` in `ez.swift`. Do **not** hard-code a `v` prefix in the printed version — `release.sh` writes whatever it is given into `VERSION` (it even guards against a double `vv`), so `./release.sh v1.2.3` would print `vv1.2.3`. The acceptance test is deliberately prefix-agnostic.
 

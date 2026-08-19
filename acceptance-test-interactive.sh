@@ -105,39 +105,59 @@ prompt
 ez toptest
 
 echo ""
-echo "## Test 7: Add secret to keychain"
-echo "Expected: Touch ID / password prompt, then confirmation"
+echo "## Test 7: Add secret to keychain (deprecated --value)"
+echo "Expected: --value deprecation warning, Touch ID / password prompt, then confirmation"
 echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value hello_secret"
 prompt
 ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value hello_secret
 
 echo ""
 echo "## Test 8: Add duplicate secret (should fail)"
-echo "Expected: Error about existing key"
+echo "Expected: --value deprecation warning, then error about existing key"
 echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value other"
 prompt
 ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value other || true
 
 echo ""
 echo "## Test 9: Force overwrite secret"
-echo "Expected: Touch ID / password prompt, then confirmation"
+echo "Expected: --value deprecation warning, Touch ID / password prompt, then confirmation"
 echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value updated_secret --force"
 prompt
 ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --value updated_secret --force
 
 echo ""
-echo "## Test 10: Execute alias with secret placeholder"
+echo "## Test 10: Hidden prompt (no --value)"
+echo "Expected: 'Enter value for EZ_INTERACTIVE_TEST_CANARY:' prompt; typed input stays invisible (like sudo)"
+echo "Type: prompted_secret and press Enter"
+echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --force"
+prompt
+ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --force
+
+echo ""
+echo "## Test 11: Cancel hidden prompt (Ctrl+C)"
+echo "Expected: type a few characters (invisible), then press Ctrl+C. ez exits without"
+echo "storing anything, and the terminal still echoes typed input afterwards — verify by"
+echo "typing at the next 'Press Enter' prompt. Test 12 confirms the secret is unchanged."
+echo "Running: ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --force"
+prompt
+# The script must survive the child dying of SIGINT, so catch INT around this one call
+trap ':' INT
+ez add-secret --key EZ_INTERACTIVE_TEST_CANARY --force || true
+trap - INT
+
+echo ""
+echo "## Test 12: Execute alias with secret placeholder"
 ez add secrettest 'echo The secret is {EZ_INTERACTIVE_TEST_CANARY}'
-echo "Expected: 'Executing: echo The secret is {EZ_INTERACTIVE_TEST_CANARY}' then outputs 'The secret is updated_secret'"
+echo "Expected: 'Executing: echo The secret is {EZ_INTERACTIVE_TEST_CANARY}' then outputs 'The secret is prompted_secret'"
 echo "Running: ez secrettest"
 prompt
 ez secrettest
 
 echo ""
-echo "## Test 11: Run history never stores resolved secrets"
+echo "## Test 13: Run history never stores resolved secrets"
 dump=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs where alias_name = 'secrettest'")
 echo "Recorded template: $dump"
-if echo "$dump" | grep -q '{EZ_INTERACTIVE_TEST_CANARY}' && ! echo "$dump" | grep -q 'updated_secret'; then
+if echo "$dump" | grep -q '{EZ_INTERACTIVE_TEST_CANARY}' && ! echo "$dump" | grep -q 'prompted_secret'; then
     echo "✓ database holds {EZ_INTERACTIVE_TEST_CANARY} and not the secret value"
 else
     echo "✗ database does not hold the placeholder form"
@@ -145,7 +165,7 @@ fi
 prompt
 
 echo ""
-echo "## Test 12: Remove secret from keychain"
+echo "## Test 14: Remove secret from keychain"
 echo "Expected: Confirmation that secret was removed"
 echo "Running: ez remove-secret EZ_INTERACTIVE_TEST_CANARY"
 prompt

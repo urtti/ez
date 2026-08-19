@@ -266,6 +266,14 @@ assert_contains "$output" "Must start with EZ_" "add-secret rejects key without 
 output=$(ez add-secret --key EZ_lower --value test 2>&1 || true)
 assert_contains "$output" "Must start with EZ_" "add-secret rejects lowercase key"
 
+# Without --value and with stdin closed/empty, add-secret must fail before touching the keychain
+output=$(ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY < /dev/null 2>&1 || true)
+assert_contains "$output" "No value provided on stdin" "add-secret without --value fails on empty stdin"
+assert_exit_code "add-secret with empty stdin exits 1" 1 ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY < /dev/null
+
+output=$(printf '\n' | ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY 2>&1 || true)
+assert_contains "$output" "must not be empty" "add-secret rejects an empty secret value"
+
 # Protected keywords for secrets
 echo ""
 echo "## Secret Protected Keywords"
@@ -347,6 +355,27 @@ assert_contains "$output" "No run history" "aborted secret alias records no run"
 # Needs a real keychain item, so it is skipped when the keychain is unavailable.
 CANARY_VALUE="leakcanary987"
 if ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force > /dev/null 2>&1; then
+    # --value still works but is deprecated; the warning must land on stderr
+    warn_output=$(ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force 2>&1)
+    assert_contains "$warn_output" "shell history" "--value prints a deprecation warning"
+    # the ez() wrapper merges 2>&1, so call the binary directly to separate the streams
+    warn_stdout=$("$EZ_BIN" add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force 2>/dev/null)
+    if echo "$warn_stdout" | grep -q "shell history"; then
+        echo "✗ deprecation warning goes to stderr, not stdout"
+        ((++FAIL))
+    else
+        echo "✓ deprecation warning goes to stderr, not stdout"
+        ((++PASS))
+    fi
+
+    # Piping the value on stdin is the supported replacement — round-trip it
+    STDIN_VALUE="stdincanary654"
+    printf '%s\n' "$STDIN_VALUE" | ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --force > /dev/null
+    ez add stdinsecret 'echo got:{EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
+    stdin_line=$(ez stdinsecret | grep '^got:' || true)
+    assert_equals "$stdin_line" "got:$STDIN_VALUE" "secret piped on stdin round-trips through an alias"
+
+    ez add-secret --key EZ_ACCEPTANCE_TEST_CANARY --value "$CANARY_VALUE" --force > /dev/null 2>&1
     ez add statscanary 'echo token={EZ_ACCEPTANCE_TEST_CANARY}' > /dev/null
     ez statscanary > /dev/null 2>&1
     template=$(sqlite3 "$EZCLI_HOME/runs.db" "select command_template from runs where alias_name = 'statscanary'")

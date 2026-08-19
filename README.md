@@ -61,10 +61,17 @@ ez greet world a b     # → echo hello world a b
 
 Store secrets in Apple Keychain and reference them in aliases:
 ```sh
-ez add-secret --key EZ_API_KEY --value sk-abc123
+ez add-secret --key EZ_API_KEY          # prompts for the value with typing hidden
 ez add deploy 'curl -H "Authorization: {EZ_API_KEY}" https://api.example.com/deploy'
 ez deploy  # secret is injected at runtime, never shown in terminal output
 ```
+
+In scripts, pipe the value on stdin instead:
+```sh
+op read "op://vault/api/key" | ez add-secret --key EZ_API_KEY --force
+```
+
+(`--value` is also accepted but deprecated — it leaves the secret in shell history and `ps` — and will be removed in a future release.)
 
 Remove a secret:
 ```sh
