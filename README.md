@@ -2,7 +2,7 @@
 
 A macOS CLI tool for project-specific command aliases. Define commands locally within project directories, making team workflows more efficient and discoverable.
 
-![Demo](https://vhs.charm.sh/vhs-MNJIHYcWKivqHnrdoc14c.gif)
+![Demo](docs/demo.gif)
 
 ## Features
 
@@ -21,6 +21,14 @@ A macOS CLI tool for project-specific command aliases. Define commands locally w
 ```sh
 brew tap urtti/ez && brew install ez
 ```
+
+Upgrade an existing install:
+
+```sh
+brew update && brew upgrade ez
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
 ## Usage
 
