@@ -25,17 +25,17 @@ cli macos swift aliases command-line developer-tools productivity terminal zsh k
 **Replace** the "Run commands in parallel" block (currently `ez -p lint test`,
 which errors — `-p` belongs to `add`) with:
 
-```markdown
+~~~~markdown
 Run several commands in parallel under one alias (experimental):
 ```sh
 ez add -p checks "npm run lint" "npm test"
 ez checks
 ```
-```
+~~~~
 
 **Replace** the first paragraph under `# ez` with:
 
-```markdown
+~~~~markdown
 **Per-project command aliases for macOS.** Save the commands you keep retyping
 in each repo — deploys, test runs, the curl you always look up — as short
 aliases that live next to the code:
@@ -47,9 +47,9 @@ ez deploy
 
 - **Committable.** Aliases live in `.ez_cli.json`; commit it and your team has them too.
 - **Secrets stay secret.** `{EZ_API_KEY}` reads from the macOS Keychain and never appears in shell history, `ps`, or the terminal.
-- **Knows when things get slower.** Every run is timed locally; `ez stats` shows medians and trends, and a run 60% slower than usual says so.
+- **Knows when things get slower.** Every run is timed locally; `ez stats` shows medians and trends, and a run much slower than usual says so.
 - **Private.** No network calls, ever.
-```
+~~~~
 
 **Add** a short "Why not just…" section above `## Installation`:
 
@@ -71,7 +71,7 @@ ez deploy
 ```
 
 **awesome-macos-command-line** (section: Developer / Productivity):
-```
+~~~~
 ### ez
 
 Save per-project commands as short aliases in a committable `.ez_cli.json`, with secrets from the Keychain.
@@ -82,7 +82,7 @@ ez deploy
 ```
 
 [ez](https://github.com/urtti/ez)
-```
+~~~~
 
 **awesome-swift** (Command Line section):
 ```
