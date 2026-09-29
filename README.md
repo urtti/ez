@@ -1,6 +1,13 @@
 # ez
 
-A macOS CLI tool for project-specific command aliases. Define commands locally within project directories, making team workflows more efficient and discoverable.
+**Per-project command aliases for macOS.** Save the commands you keep retyping in each repo — deploys, test runs, the curl you always look up — as short aliases that live next to the code:
+
+```sh
+ez add deploy './scripts/deploy.sh --env prod'
+ez deploy
+```
+
+Commit the `.ez_cli.json` and your team has them too. API keys come from the macOS Keychain and never appear in shell history, `ps`, or the terminal. Every run is timed locally, so `ez stats` shows when a command is getting slower.
 
 ![Demo](docs/demo.gif)
 
@@ -15,6 +22,12 @@ A macOS CLI tool for project-specific command aliases. Define commands locally w
 - **Interactive support** - Full terminal passthrough for interactive applications like vim and ssh
 - **Shell integration** - zsh tab completion for command discovery
 - **Built-in analytics** - Local runtime tracking; `ez stats` shows per-alias duration history and trends
+
+## Why not just…
+
+- **…shell aliases?** Those are global. `ez test` can mean something different in each repo, and a teammate gets it by cloning.
+- **…make or just?** Use them for build graphs and task dependencies. ez is for the one-liners that never deserved a Makefile target, and you add one without opening an editor.
+- **…npm scripts?** Not every repo is a JavaScript repo, and npm won't keep your API key out of `ps`.
 
 ## Installation
 
@@ -91,9 +104,10 @@ Run multiple commands sequentially:
 ez build && ez test && ez deploy
 ```
 
-Run commands in parallel:
+Run several commands in parallel under one alias (experimental):
 ```sh
-ez -p lint test
+ez add -p checks "npm run lint" "npm test"
+ez checks
 ```
 
 ## How It Works
